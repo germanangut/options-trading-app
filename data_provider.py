@@ -90,7 +90,13 @@ def fetch_alpaca_option_chain(ticker):
     response = requests.get(url, headers=headers, timeout=20)
     response.raise_for_status()
 
-    return response.json()
+    data = response.json()
+
+    # TEMP DEBUG — inspect structure
+    print(f"\n=== RAW RESPONSE FOR {ticker} ===")
+    print(list(data.keys())[:5])  # avoid huge dump
+
+    return data
 
 
 def normalize_alpaca_chain(raw_chain, ticker):
