@@ -15,7 +15,7 @@ ALPACA_DATA_BASE_URL = os.getenv("ALPACA_DATA_BASE_URL", "https://data.alpaca.ma
 ALPACA_TRADING_BASE_URL = os.getenv("ALPACA_TRADING_BASE_URL", "https://paper-api.alpaca.markets")
 
 OPTION_CONTRACTS_URL = f"{ALPACA_TRADING_BASE_URL}/v2/options/contracts"
-OPTION_SNAPSHOTS_URL_TEMPLATE = f"{ALPACA_DATA_BASE_URL}/v1beta1/options/snapshots/{{ticker}}"
+OPTION_SNAPSHOTS_URL = f"{ALPACA_DATA_BASE_URL}/v1beta1/options/snapshots"
 STOCK_LATEST_QUOTES_URL = f"{ALPACA_DATA_BASE_URL}/v2/stocks/quotes/latest"
 
 
@@ -72,7 +72,8 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                 missing_tickers.append(ticker)
                 continue
 
-            option_snapshots = fetch_option_snapshots_for_underlying(ticker)
+            option_symbols = [contract["symbol"] for contract in discovered["contracts"]]
+            option_snapshots = fetch_option_snapshots_for_symbols(option_symbols)
             underlying_quote = fetch_underlying_stock_quote(ticker)
 
             normalized = normalize_discovered_contracts(
@@ -104,7 +105,7 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
     return {
         "market_data": market_data,
         "missing_tickers": missing_tickers,
-        "provider": "alpaca-contracts-plus-snapshots",
+        "provider": "alpaca-contracts-plus-symbol-snapshots",
         "provider_errors": provider_errors,
     }
 
@@ -223,20 +224,47 @@ def choose_best_discovered_expiration(grouped_contracts):
     return candidates[0]
 
 
-def fetch_option_snapshots_for_underlying(ticker):
-    url = OPTION_SNAPSHOTS_URL_TEMPLATE.format(ticker=ticker)
-    headers = alpaca_headers()
+def chunk_list(items, chunk_size):
+    for i in range(0, len(items), chunk_size):
+        yield items[i:i + chunk_size]
 
-    response = requests.get(url, headers=headers, timeout=20)
-    response.raise_for_status()
 
-    raw = response.json()
-    snapshots = raw.get("snapshots", {})
+def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
+    """
+    Fetch symbol-specific option snapshots in batches.
 
-    if not isinstance(snapshots, dict):
+    Returns a dict keyed by option symbol.
+    """
+    if not option_symbols:
         return {}
 
-    return snapshots
+    all_snapshots = {}
+
+    for symbol_chunk in chunk_list(option_symbols, chunk_size):
+        params = {
+            "symbols": ",".join(symbol_chunk),
+        }
+
+        response = requests.get(
+            OPTION_SNAPSHOTS_URL,
+            headers=alpaca_headers(),
+            params=params,
+            timeout=20,
+        )
+        response.raise_for_status()
+
+        raw = response.json()
+
+        chunk_snapshots = {}
+        for key in ["snapshots", "data"]:
+            value = raw.get(key)
+            if isinstance(value, dict):
+                chunk_snapshots = value
+                break
+
+        all_snapshots.update(chunk_snapshots)
+
+    return all_snapshots
 
 
 def fetch_underlying_stock_quote(ticker):
@@ -275,10 +303,9 @@ def normalize_discovered_contracts(
 
     snapshot_symbols = set(option_snapshots.keys())
     discovered_symbols = {contract.get("symbol") for contract in discovered_contracts}
-
     matching_symbols = discovered_symbols & snapshot_symbols
 
-    print(f"\n=== SNAPSHOT MATCH DEBUG: {ticker} ===")
+    print(f"\n=== SYMBOL SNAPSHOT MATCH DEBUG: {ticker} ===")
     print("discovered_symbol_count:", len(discovered_symbols))
     print("snapshot_symbol_count:", len(snapshot_symbols))
     print("matching_symbol_count:", len(matching_symbols))
