@@ -14,6 +14,25 @@ DEBUG_MODE = "--debug" in sys.argv
 
 def process_ticker(ticker, ticker_data):
     contracts = ticker_data["contracts"]
+    provider_diagnostics = ticker_data.get("provider_diagnostics", {})
+
+    if not contracts:
+        return {
+            "ticker": ticker,
+            "bull_put_spread": None,
+            "bear_call_spread": None,
+            "bull_put_available": False,
+            "bear_call_available": False,
+            "selected_legs": {
+                "short_put": None,
+                "long_put": None,
+                "short_call": None,
+                "long_call": None,
+            },
+            "provider_diagnostics": provider_diagnostics,
+        }
+
+
     underlying_price = ticker_data["underlying_price"]
     expiration_date = ticker_data["expiration_date"]
     dte = ticker_data["DTE"]

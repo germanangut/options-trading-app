@@ -1,6 +1,5 @@
 import os
-from datetime import datetime, date
-from typing import Any
+from datetime import date, datetime, timedelta
 
 import requests
 from dotenv import load_dotenv
@@ -13,6 +12,11 @@ load_dotenv()
 ALPACA_API_KEY = os.getenv("ALPACA_API_KEY")
 ALPACA_API_SECRET = os.getenv("ALPACA_API_SECRET")
 ALPACA_DATA_BASE_URL = os.getenv("ALPACA_DATA_BASE_URL", "https://data.alpaca.markets")
+ALPACA_TRADING_BASE_URL = os.getenv("ALPACA_TRADING_BASE_URL", "https://paper-api.alpaca.markets")
+
+OPTION_CONTRACTS_URL = f"{ALPACA_TRADING_BASE_URL}/v2/options/contracts"
+OPTION_SNAPSHOTS_URL_TEMPLATE = f"{ALPACA_DATA_BASE_URL}/v1beta1/options/snapshots/{{ticker}}"
+STOCK_LATEST_QUOTES_URL = f"{ALPACA_DATA_BASE_URL}/v2/stocks/quotes/latest"
 
 
 def get_market_data(tickers):
@@ -24,6 +28,13 @@ def get_market_data(tickers):
 
 def has_alpaca_credentials():
     return bool(ALPACA_API_KEY and ALPACA_API_SECRET)
+
+
+def alpaca_headers():
+    return {
+        "APCA-API-KEY-ID": ALPACA_API_KEY,
+        "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+    }
 
 
 def get_mock_market_data(tickers):
@@ -40,29 +51,47 @@ def get_mock_market_data(tickers):
         "market_data": market_data,
         "missing_tickers": missing_tickers,
         "provider": "alpaca-mock-fallback",
+        "provider_errors": [],
     }
 
 
-def get_alpaca_market_data(tickers):
+def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
     market_data = {}
     missing_tickers = []
     provider_errors = []
 
     for ticker in tickers:
         try:
-            raw_chain = fetch_alpaca_option_chain(ticker)
+            discovered = discover_option_contracts_for_window(
+                ticker=ticker,
+                dte_min=dte_min,
+                dte_max=dte_max,
+            )
 
-            if not raw_chain:
+            if not discovered["contracts"]:
                 missing_tickers.append(ticker)
                 continue
 
-            normalized = normalize_alpaca_chain(raw_chain, ticker)
+            option_snapshots = fetch_option_snapshots_for_underlying(ticker)
+            underlying_quote = fetch_underlying_stock_quote(ticker)
+
+            normalized = normalize_discovered_contracts(
+                ticker=ticker,
+                discovered_contracts=discovered["contracts"],
+                option_snapshots=option_snapshots,
+                underlying_quote=underlying_quote,
+                chosen_expiration=discovered["chosen_expiration"],
+                chosen_dte=discovered["chosen_dte"],
+            )
 
             if normalized is None:
                 missing_tickers.append(ticker)
                 continue
 
             market_data[ticker] = normalized
+
+            if not normalized["contracts"]:
+                missing_tickers.append(ticker)
 
         except Exception as exc:
             provider_errors.append(
@@ -75,388 +104,274 @@ def get_alpaca_market_data(tickers):
     return {
         "market_data": market_data,
         "missing_tickers": missing_tickers,
-        "provider": "alpaca",
+        "provider": "alpaca-contracts-plus-snapshots",
         "provider_errors": provider_errors,
     }
 
 
-def fetch_alpaca_option_chain(ticker, max_pages=20):
-    headers = {
-        "APCA-API-KEY-ID": ALPACA_API_KEY,
-        "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
+def discover_option_contracts_for_window(ticker, dte_min=30, dte_max=45, limit=1000):
+    today = date.today()
+    expiration_gte = (today + timedelta(days=dte_min)).strftime("%Y-%m-%d")
+    expiration_lte = (today + timedelta(days=dte_max)).strftime("%Y-%m-%d")
+
+    params = {
+        "underlying_symbols": ticker,
+        "expiration_date_gte": expiration_gte,
+        "expiration_date_lte": expiration_lte,
+        "status": "active",
+        "limit": limit,
     }
 
-    base_url = f"{ALPACA_DATA_BASE_URL}/v1beta1/options/snapshots/{ticker}"
+    response = requests.get(
+        OPTION_CONTRACTS_URL,
+        headers=alpaca_headers(),
+        params=params,
+        timeout=20,
+    )
+    response.raise_for_status()
 
-    all_snapshots = {}
-    next_page_token = None
-    pages_fetched = 0
+    raw = response.json()
 
-    while pages_fetched < max_pages:
-        params = {}
+    raw_contracts = extract_contract_list(raw)
+    grouped = group_discovered_contracts_by_expiration(raw_contracts)
+    chosen_expiration = choose_best_discovered_expiration(grouped)
 
-        if next_page_token:
-            params["page_token"] = next_page_token
+    expiration_date = None
+    chosen_contracts = []
+    chosen_dte = None
 
-        response = requests.get(base_url, headers=headers, params=params, timeout=20)
-        response.raise_for_status()
+    if chosen_expiration is not None:
+        expiration_date = chosen_expiration["expiration_date"]
+        chosen_contracts = chosen_expiration["contracts"]
+        chosen_dte = chosen_expiration["DTE"]
 
-        data = response.json()
-        pages_fetched += 1
+    print(f"\n=== CONTRACT DISCOVERY DEBUG: {ticker} ===")
+    print("raw_contract_count:", len(raw_contracts))
 
-        page_snapshots = data.get("snapshots", {})
-        if not isinstance(page_snapshots, dict):
-            page_snapshots = {}
+    if raw_contracts:
+        print("sample_discovered_contract_keys:", list(raw_contracts[0].keys()))
+        print("sample_discovered_contract:", raw_contracts[0])
 
-        all_snapshots = merge_snapshot_maps(all_snapshots, page_snapshots)
-
-        print(f"\n=== RAW RESPONSE PAGE {pages_fetched} FOR {ticker} ===")
-        print("Top-level keys:", list(data.keys()))
-        print("page_snapshot_count:", len(page_snapshots))
-        print("total_snapshot_count:", len(all_snapshots))
-
-        if page_snapshots:
-            first_symbol = next(iter(page_snapshots))
-            print("Sample contract symbol:", repr(first_symbol))
-            print("Sample contract keys:", list(page_snapshots[first_symbol].keys()))
-            print("Sample latestQuote:", page_snapshots[first_symbol].get("latestQuote" ))
-            print("Sample greeks:", page_snapshots[first_symbol].get("greeks"))
-
-        next_page_token = data.get("next_page_token")
-        print("next_page_token:", next_page_token)
-        current_expiration_summary = summarize_grouped_expirations(
-            group_contracts_by_expiration(
-                [
-                    {**payload, "contract_symbol": contract_symbol}
-                    for contract_symbol, payload in all_snapshots.items()
-                    if isinstance(payload, dict)
-                ]
-            )
-        )
-
-        print("current_expiration_summary_first_10:", current_expiration_summary[:10])
-
-        # Stop early if we already found expirations in the target DTE range
-        if response_contains_target_dte(all_snapshots):
-            print("Target DTE range found. Stopping pagination early.")
-            break
-
-        if not next_page_token:
-            break
-
-    return {
-        "snapshots": all_snapshots,
-        "next_page_token": next_page_token,
-        "pages_fetched": pages_fetched,
-    }
-
-
-def normalize_alpaca_chain(raw_chain, ticker):
-    snapshots = extract_contract_snapshots(raw_chain)
-
-    print(f"\n=== NORMALIZE DEBUG: {ticker} ===")
-    print("snapshot_count:", len(snapshots))
-
-    if snapshots:
-        first = snapshots[0]
-        print("first_snapshot_symbol:", first.get("contract_symbol"))
-
-    grouped = group_contracts_by_expiration(snapshots)
-    expiration_summary = summarize_grouped_expirations(grouped)
-    print("expiration_summary_first_15:", expiration_summary[:15])
-
-    in_range = [e for e in expiration_summary if 30 <= e["DTE"] <= 45]
-    print("expirations_in_target_range:", in_range)
-    print("grouped_expirations:", list(grouped.keys())[:10])
     print("grouped_expiration_count:", len(grouped))
+    print("chosen_expiration:", expiration_date)
+    print("chosen_dte:", chosen_dte)
+    print("chosen_contract_count:", len(chosen_contracts))
 
-    expiration_choice = choose_target_expiration(grouped)
-    print("expiration_choice:", expiration_choice["expiration_date"] if expiration_choice else None)
-
-    if expiration_choice is None:
+    if not chosen_contracts:
         return {
-            "underlying_price": None,
-            "expiration_date": None,
-            "DTE": None,
             "contracts": [],
-            "provider_diagnostics": {
-                "ticker": ticker,
-                "snapshot_count": len(snapshots),
-                "grouped_expiration_count": len(grouped),
-                "reason": "no_usable_expiration_found",
-            },
+            "chosen_expiration": None,
+            "chosen_dte": None,
         }
 
-    expiration_date = expiration_choice["expiration_date"]
-    dte = expiration_choice["DTE"]
-    contracts_for_expiration = expiration_choice["contracts"]
+    return {
+        "contracts": chosen_contracts,
+        "chosen_expiration": expiration_date,
+        "chosen_dte": chosen_dte,
+    }
 
-    print("contracts_for_expiration_count:", len(contracts_for_expiration))
 
+def extract_contract_list(raw_response):
+    if not isinstance(raw_response, dict):
+        return []
+
+    for key in ["option_contracts", "contracts", "data"]:
+        value = raw_response.get(key)
+        if isinstance(value, list):
+            return value
+
+    return []
+
+
+def group_discovered_contracts_by_expiration(raw_contracts):
+    grouped = {}
+
+    for contract in raw_contracts:
+        expiration_date = contract.get("expiration_date")
+        if not expiration_date:
+            continue
+
+        grouped.setdefault(expiration_date, []).append(contract)
+
+    return grouped
+
+
+def choose_best_discovered_expiration(grouped_contracts):
+    today = date.today()
+    candidates = []
+
+    for expiration_str, contracts in grouped_contracts.items():
+        try:
+            expiration_dt = datetime.strptime(expiration_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        dte = (expiration_dt - today).days
+        candidates.append(
+            {
+                "expiration_date": expiration_str,
+                "contracts": contracts,
+                "DTE": dte,
+                "distance_from_target": abs(dte - 37),
+            }
+        )
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: item["distance_from_target"])
+    return candidates[0]
+
+
+def fetch_option_snapshots_for_underlying(ticker):
+    url = OPTION_SNAPSHOTS_URL_TEMPLATE.format(ticker=ticker)
+    headers = alpaca_headers()
+
+    response = requests.get(url, headers=headers, timeout=20)
+    response.raise_for_status()
+
+    raw = response.json()
+    snapshots = raw.get("snapshots", {})
+
+    if not isinstance(snapshots, dict):
+        return {}
+
+    return snapshots
+
+
+def fetch_underlying_stock_quote(ticker):
+    params = {
+        "symbols": ticker,
+    }
+
+    response = requests.get(
+        STOCK_LATEST_QUOTES_URL,
+        headers=alpaca_headers(),
+        params=params,
+        timeout=20,
+    )
+    response.raise_for_status()
+
+    raw = response.json()
+
+    for key in ["quotes", "data"]:
+        value = raw.get(key)
+        if isinstance(value, dict):
+            return value.get(ticker)
+
+    return None
+
+
+def normalize_discovered_contracts(
+    ticker,
+    discovered_contracts,
+    option_snapshots,
+    underlying_quote,
+    chosen_expiration,
+    chosen_dte,
+):
     normalized_contracts = []
     all_normalized_contracts = []
 
-    for raw_contract in contracts_for_expiration:
-        normalized_contract = normalize_contract(raw_contract)
-        all_normalized_contracts.append(normalized_contract)
+    snapshot_symbols = set(option_snapshots.keys())
+    discovered_symbols = {contract.get("symbol") for contract in discovered_contracts}
 
-        if validate_normalized_contract(normalized_contract):
-            normalized_contracts.append(normalized_contract)
+    matching_symbols = discovered_symbols & snapshot_symbols
 
-    print("normalized_contract_count:", len(all_normalized_contracts))
-    print("valid_contract_count:", len(normalized_contracts))
+    print(f"\n=== SNAPSHOT MATCH DEBUG: {ticker} ===")
+    print("discovered_symbol_count:", len(discovered_symbols))
+    print("snapshot_symbol_count:", len(snapshot_symbols))
+    print("matching_symbol_count:", len(matching_symbols))
 
-    underlying_price = extract_underlying_price(raw_chain, contracts_for_expiration)
+    if discovered_contracts:
+        first_symbol = discovered_contracts[0].get("symbol")
+        print("first_discovered_symbol:", first_symbol)
+        print("first_symbol_in_snapshots:", first_symbol in snapshot_symbols)
+
+    for raw_contract in discovered_contracts:
+        normalized = normalize_discovered_contract(raw_contract, option_snapshots)
+        all_normalized_contracts.append(normalized)
+
+        if validate_normalized_contract(normalized):
+            normalized_contracts.append(normalized)
+
+    underlying_price = normalize_underlying_price(underlying_quote)
+
+    print(f"\n=== NORMALIZED CONTRACT DEBUG: {ticker} ===")
+    print("discovered_contract_count:", len(discovered_contracts))
+    print("all_normalized_contract_count:", len(all_normalized_contracts))
+    print("valid_normalized_contract_count:", len(normalized_contracts))
     print("underlying_price:", underlying_price)
+
+    if all_normalized_contracts:
+        print("sample_normalized_contract:", all_normalized_contracts[0])
 
     return {
         "underlying_price": underlying_price,
-        "expiration_date": expiration_date,
-        "DTE": dte,
+        "expiration_date": chosen_expiration,
+        "DTE": chosen_dte,
         "contracts": normalized_contracts,
         "provider_diagnostics": {
             "ticker": ticker,
-            "snapshot_count": len(snapshots),
-            "grouped_expiration_count": len(grouped),
-            "chosen_expiration": expiration_date,
-            "chosen_dte": dte,
-            "used_fallback_expiration": expiration_choice.get("used_fallback_expiration", False),
-            "contracts_for_expiration_count": len(contracts_for_expiration),
-            "normalized_contract_count": len(all_normalized_contracts),
+            "chosen_expiration": chosen_expiration,
+            "chosen_dte": chosen_dte,
+            "discovered_contract_count": len(discovered_contracts),
             "valid_contract_count": len(normalized_contracts),
             "missing_delta_contracts": sum(
                 1 for c in all_normalized_contracts if c.get("delta") is None
             ),
             "underlying_price_found": underlying_price is not None,
-            "expiration_summary_first_15": expiration_summary[:15],
-            "expirations_in_target_range": in_range,
+            "discovered_symbol_count": len(discovered_symbols),
+            "snapshot_symbol_count": len(snapshot_symbols),
+            "matching_symbol_count": len(matching_symbols),
         },
     }
 
 
-def extract_contract_snapshots(raw_chain):
-    if not isinstance(raw_chain, dict):
-        return []
+def normalize_discovered_contract(raw_contract, option_snapshots):
+    contract_symbol = raw_contract.get("symbol")
+    option_type = raw_contract.get("type")
+    if option_type:
+        option_type = option_type.lower()
 
-    snapshots_container = raw_chain.get("snapshots", {})
-    if not isinstance(snapshots_container, dict):
-        return []
+    strike_raw = raw_contract.get("strike_price")
+    open_interest_raw = raw_contract.get("open_interest")
 
-    snapshots = []
-
-    for contract_symbol, payload in snapshots_container.items():
-        if not isinstance(payload, dict):
-            continue
-
-        snapshot = dict(payload)
-        snapshot["contract_symbol"] = contract_symbol
-        snapshots.append(snapshot)
-
-    return snapshots
-
-
-def group_contracts_by_expiration(contract_snapshots):
-    grouped = {}
-
-    for contract in contract_snapshots:
-        contract_symbol = contract.get("contract_symbol")
-        symbol_info = parse_option_symbol(contract_symbol)
-
-        if symbol_info is None:
-            continue
-
-        expiration_date = symbol_info["expiration_date"]
-        grouped.setdefault(expiration_date, []).append(contract)
-
-    return grouped
-
-from datetime import datetime, date
-
-
-def choose_target_expiration(grouped_contracts):
-    today = date.today()
-    candidates_in_range = []
-    all_candidates = []
-
-    for expiration_str, contracts in grouped_contracts.items():
-        try:
-            expiration_dt = datetime.strptime(expiration_str, "%Y-%m-%d").date()
-        except ValueError:
-            continue
-
-        dte = (expiration_dt - today).days
-
-        candidate = {
-            "expiration_date": expiration_str,
-            "DTE": dte,
-            "contracts": contracts,
-            "distance_from_target": abs(dte - 37),
-            "used_fallback_expiration": False,
-        }
-
-        all_candidates.append(candidate)
-
-        if 30 <= dte <= 45:
-            candidates_in_range.append(candidate)
-
-    if candidates_in_range:
-        candidates_in_range.sort(key=lambda item: item["distance_from_target"])
-        return candidates_in_range[0]
-
-    non_expired = [c for c in all_candidates if c["DTE"] >= 0]
-    if non_expired:
-        non_expired.sort(key=lambda item: item["distance_from_target"])
-        chosen = non_expired[0]
-        chosen["used_fallback_expiration"] = True
-        return chosen
-
-    return None
-
-def normalize_contract(raw_contract):
-    contract_symbol = raw_contract.get("contract_symbol")
-    symbol_info = parse_option_symbol(contract_symbol)
-
-    if symbol_info is None:
-        return {
-            "strike": None,
-            "type": None,
-            "delta": None,
-            "bid": None,
-            "ask": None,
-            "open_interest": None,
-            "expiration_date": None,
-        }
-
-    latest_quote = raw_contract.get("latestQuote", {})
-    greeks = raw_contract.get("greeks", {})
+    snapshot = option_snapshots.get(contract_symbol, {})
+    latest_quote = snapshot.get("latestQuote", {})
+    greeks = snapshot.get("greeks", {})
 
     if greeks is None:
         greeks = {}
 
+    strike = float(strike_raw) if strike_raw is not None else None
+    open_interest = int(open_interest_raw) if open_interest_raw is not None else None
+
     return {
-        "strike": symbol_info["strike"],
-        "type": symbol_info["type"],
+        "strike": strike,
+        "type": option_type,
         "delta": greeks.get("delta"),
         "bid": latest_quote.get("bp"),
         "ask": latest_quote.get("ap"),
-        "open_interest": raw_contract.get("open_interest"),
-        "expiration_date": symbol_info["expiration_date"],
+        "open_interest": open_interest,
+        "expiration_date": raw_contract.get("expiration_date"),
+        "symbol": contract_symbol,
     }
+
+
+def normalize_underlying_price(underlying_quote):
+    if not isinstance(underlying_quote, dict):
+        return None
+
+    bid = underlying_quote.get("bp")
+    ask = underlying_quote.get("ap")
+
+    if bid is not None and ask is not None:
+        return round((bid + ask) / 2, 4)
+
+    return None
+
 
 def validate_normalized_contract(contract):
     required_fields = ["strike", "type", "delta", "bid", "ask"]
     return all(field in contract and contract[field] is not None for field in required_fields)
-
-from datetime import datetime
-
-
-def parse_option_symbol(contract_symbol):
-    """
-    Parse an OCC-style option symbol like:
-    QQQ260324C00547000
-
-    Returns:
-    {
-        "underlying": "QQQ",
-        "expiration_date": "2026-03-24",
-        "type": "call",
-        "strike": 547.0,
-    }
-    """
-    if not contract_symbol or len(contract_symbol) < 15:
-        return None
-
-    underlying = contract_symbol[:-15]
-    date_part = contract_symbol[-15:-9]
-    option_type_code = contract_symbol[-9]
-    strike_part = contract_symbol[-8:]
-
-    try:
-        expiration_date = datetime.strptime(date_part, "%y%m%d").strftime("%Y-%m-%d")
-        strike = int(strike_part) / 1000
-    except ValueError:
-        return None
-
-    option_type = "call" if option_type_code == "C" else "put" if option_type_code == "P" else None
-
-    if option_type is None:
-        return None
-
-    return {
-        "underlying": underlying,
-        "expiration_date": expiration_date,
-        "type": option_type,
-        "strike": strike,
-    }
-
-def extract_underlying_price(raw_chain, contracts_for_expiration):
-    
-    # Only use real underlying fields if present.
-    for contract in contracts_for_expiration:
-        if "underlying_price" in contract and contract["underlying_price"] is not None:
-            return contract["underlying_price"]
-
-        underlying_asset = contract.get("underlying_asset", {})
-        if isinstance(underlying_asset, dict):
-            price = underlying_asset.get("price")
-            if price is not None:
-                return price
-
-    # Do NOT use option latestTrade price as stock price.
-    return None
-
-def merge_snapshot_maps(existing_snapshots, new_snapshots):
-    merged = dict(existing_snapshots)
-
-    for contract_symbol, payload in new_snapshots.items():
-        merged[contract_symbol] = payload
-
-    return merged
-
-def response_contains_target_dte(snapshot_map):
-    if not isinstance(snapshot_map, dict) or not snapshot_map:
-        return False
-
-    grouped = group_contracts_by_expiration(
-        [
-            {**payload, "contract_symbol": contract_symbol}
-            for contract_symbol, payload in snapshot_map.items()
-            if isinstance(payload, dict)
-        ]
-    )
-
-    today = date.today()
-
-    for expiration_str in grouped.keys():
-        try:
-            expiration_dt = datetime.strptime(expiration_str, "%Y-%m-%d").date()
-        except ValueError:
-            continue
-
-        dte = (expiration_dt - today).days
-        if 30 <= dte <= 45:
-            return True
-
-    return False
-
-def summarize_grouped_expirations(grouped_contracts):
-    today = date.today()
-    summary = []
-
-    for expiration_str, contracts in grouped_contracts.items():
-        try:
-            expiration_dt = datetime.strptime(expiration_str, "%Y-%m-%d").date()
-        except ValueError:
-            continue
-
-        dte = (expiration_dt - today).days
-        summary.append(
-            {
-                "expiration_date": expiration_str,
-                "DTE": dte,
-                "contract_count": len(contracts),
-            }
-        )
-
-    summary.sort(key=lambda item: item["DTE"])
-    return summary
