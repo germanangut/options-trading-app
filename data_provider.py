@@ -80,7 +80,7 @@ def get_alpaca_market_data(tickers):
     }
 
 
-def fetch_alpaca_option_chain(ticker, max_pages=5):
+def fetch_alpaca_option_chain(ticker, max_pages=20):
     headers = {
         "APCA-API-KEY-ID": ALPACA_API_KEY,
         "APCA-API-SECRET-KEY": ALPACA_API_SECRET,
@@ -119,11 +119,22 @@ def fetch_alpaca_option_chain(ticker, max_pages=5):
             first_symbol = next(iter(page_snapshots))
             print("Sample contract symbol:", repr(first_symbol))
             print("Sample contract keys:", list(page_snapshots[first_symbol].keys()))
-            print("Sample latestQuote:", page_snapshots[first_symbol].get("latestQuote"))
+            print("Sample latestQuote:", page_snapshots[first_symbol].get("latestQuote" ))
             print("Sample greeks:", page_snapshots[first_symbol].get("greeks"))
 
         next_page_token = data.get("next_page_token")
         print("next_page_token:", next_page_token)
+        current_expiration_summary = summarize_grouped_expirations(
+            group_contracts_by_expiration(
+                [
+                    {**payload, "contract_symbol": contract_symbol}
+                    for contract_symbol, payload in all_snapshots.items()
+                    if isinstance(payload, dict)
+                ]
+            )
+        )
+
+        print("current_expiration_summary_first_10:", current_expiration_summary[:10])
 
         # Stop early if we already found expirations in the target DTE range
         if response_contains_target_dte(all_snapshots):
@@ -151,6 +162,11 @@ def normalize_alpaca_chain(raw_chain, ticker):
         print("first_snapshot_symbol:", first.get("contract_symbol"))
 
     grouped = group_contracts_by_expiration(snapshots)
+    expiration_summary = summarize_grouped_expirations(grouped)
+    print("expiration_summary_first_15:", expiration_summary[:15])
+
+    in_range = [e for e in expiration_summary if 30 <= e["DTE"] <= 45]
+    print("expirations_in_target_range:", in_range)
     print("grouped_expirations:", list(grouped.keys())[:10])
     print("grouped_expiration_count:", len(grouped))
 
@@ -212,6 +228,8 @@ def normalize_alpaca_chain(raw_chain, ticker):
                 1 for c in all_normalized_contracts if c.get("delta") is None
             ),
             "underlying_price_found": underlying_price is not None,
+            "expiration_summary_first_15": expiration_summary[:15],
+            "expirations_in_target_range": in_range,
         },
     }
 
@@ -421,3 +439,24 @@ def response_contains_target_dte(snapshot_map):
 
     return False
 
+def summarize_grouped_expirations(grouped_contracts):
+    today = date.today()
+    summary = []
+
+    for expiration_str, contracts in grouped_contracts.items():
+        try:
+            expiration_dt = datetime.strptime(expiration_str, "%Y-%m-%d").date()
+        except ValueError:
+            continue
+
+        dte = (expiration_dt - today).days
+        summary.append(
+            {
+                "expiration_date": expiration_str,
+                "DTE": dte,
+                "contract_count": len(contracts),
+            }
+        )
+
+    summary.sort(key=lambda item: item["DTE"])
+    return summary
