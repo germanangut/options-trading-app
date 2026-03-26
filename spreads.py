@@ -23,6 +23,8 @@ def build_spread(short_leg, long_leg, strategy_type, ticker, underlying_price, e
         "long_strike": long_leg["strike"],
         "short_delta": short_leg["delta"],
         "long_delta": long_leg["delta"],
+        "short_open_interest": short_leg.get("open_interest", 0),
+        "long_open_interest": long_leg.get("open_interest", 0),
         "short_mid": round(short_mid, 3),
         "long_mid": round(long_mid, 3),
         "net_credit": round(net_credit, 3),

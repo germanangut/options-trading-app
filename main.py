@@ -83,8 +83,8 @@ def process_ticker(ticker, ticker_data):
 
 
 def main():
-    #tickers = ["SPY", "QQQ", "AAPL", "IWM", "MSFT"]
-    tickers = ["QQQ"]
+    tickers = ["SPY", "QQQ", "AAPL", "IWM", "MSFT"]
+    #tickers = ["QQQ"]
     provider_result = get_market_data(tickers)
 
     data = provider_result["market_data"]
