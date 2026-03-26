@@ -17,6 +17,27 @@ def has_min_open_interest(spread):
     return short_oi >= MIN_OPEN_INTEREST and long_oi >= MIN_OPEN_INTEREST
 
 
+def has_strike_sanity(spread):
+    if spread is None:
+        return False
+
+    strategy_type = spread.get("strategy_type")
+    underlying_price = spread.get("underlying_price")
+    short_strike = spread.get("short_strike")
+    long_strike = spread.get("long_strike")
+
+    if underlying_price is None or short_strike is None or long_strike is None:
+        return False
+
+    if strategy_type == "bull put spread":
+        return short_strike < underlying_price and long_strike < short_strike
+
+    if strategy_type == "bear call spread":
+        return short_strike > underlying_price and long_strike > short_strike
+
+    return False
+
+
 def classify_spread(spread):
     if spread is None:
         return None
@@ -24,7 +45,6 @@ def classify_spread(spread):
     pop = spread["POP"]
     ror = spread["ROR"]
 
-    # Execution-quality gate: reject low-liquidity spreads early
     if not has_min_open_interest(spread):
         spread["label"] = "Rejected"
         spread["status_reason"] = (
@@ -33,6 +53,18 @@ def classify_spread(spread):
         )
         spread["explanation"] = (
             "This spread was rejected due to insufficient open interest on one or both legs."
+        )
+        return spread
+
+    if not has_strike_sanity(spread):
+        spread["label"] = "Rejected"
+        spread["status_reason"] = (
+            "Rejected because the strike placement is not directionally consistent "
+            "with the underlying price for this spread type."
+        )
+        spread["explanation"] = (
+            "This spread was rejected because its strikes do not make market sense "
+            "relative to the underlying price."
         )
         return spread
 
@@ -50,7 +82,7 @@ def classify_spread(spread):
         )
         spread["explanation"] = (
             "This spread satisfies the minimum probability of profit, return on risk, "
-            "and open interest thresholds."
+            "open interest, and strike sanity thresholds."
         )
     elif near_miss:
         spread["label"] = "Near Miss"

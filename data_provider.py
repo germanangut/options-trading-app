@@ -381,7 +381,7 @@ def normalize_discovered_contract(raw_contract, option_snapshots):
         "bid": latest_quote.get("bp"),
         "ask": latest_quote.get("ap"),
         "open_interest": open_interest,
-        "expiration_date": raw_contract.get("expiration_date"),
+        "expiration_date": raw_contract.get("expiration_date"),  
         "symbol": contract_symbol,
     }
 
@@ -401,4 +401,4 @@ def normalize_underlying_price(underlying_quote):
 
 def validate_normalized_contract(contract):
     required_fields = ["strike", "type", "delta", "bid", "ask"]
-    return all(field in contract and contract[field] is not None for field in required_fields)
+    return all(field in contract and contract[field] is not None for field in required_fields) 
