@@ -1,19 +1,67 @@
 import json
 import sys
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from data_provider import get_market_data
+from data_provider import get_market_data, is_cached_market_data_available
 from selection import select_leg
 from spreads import build_spread
 from metrics import evaluate_spread
 from decisions import classify_spread
 from output import filter_results
+from history import save_scan
 
 
 DEBUG_MODE = "--debug" in sys.argv
+ALERTS_ONLY_MODE = "--alerts-only" in sys.argv
 
+
+def get_top_n_arg():
+    if "--top" not in sys.argv:
+        return None
+
+    try:
+        idx = sys.argv.index("--top")
+        value = sys.argv[idx + 1]
+        top_n = int(value)
+
+        if top_n <= 0:
+            return None
+
+        return top_n
+    except (IndexError, ValueError):
+        return None
+
+
+TOP_N = get_top_n_arg()
+
+
+def progress_print(message):
+    print(message, file=sys.stderr, flush=True)
+
+def get_tickers_arg(default_tickers):
+    if "--tickers" not in sys.argv:
+        return default_tickers
+
+    try:
+        idx = sys.argv.index("--tickers")
+        raw_value = sys.argv[idx + 1]
+
+        tickers = [t.strip().upper() for t in raw_value.split(",") if t.strip()]
+
+        if not tickers:
+            return default_tickers
+
+        return tickers
+
+    except IndexError:
+        return default_tickers
 
 def process_ticker(ticker, ticker_data):
     contracts = ticker_data["contracts"]
+    underlying_price = ticker_data["underlying_price"]
+    expiration_date = ticker_data["expiration_date"]
+    dte = ticker_data["DTE"]
     provider_diagnostics = ticker_data.get("provider_diagnostics", {})
 
     if not contracts:
@@ -31,11 +79,6 @@ def process_ticker(ticker, ticker_data):
             },
             "provider_diagnostics": provider_diagnostics,
         }
-
-
-    underlying_price = ticker_data["underlying_price"]
-    expiration_date = ticker_data["expiration_date"]
-    dte = ticker_data["DTE"]
 
     short_put = select_leg(contracts, target_delta=-0.30, option_type="put")
     long_put = select_leg(contracts, target_delta=-0.20, option_type="put")
@@ -65,7 +108,7 @@ def process_ticker(ticker, ticker_data):
     bull_put_spread = classify_spread(evaluate_spread(bull_put_spread))
     bear_call_spread = classify_spread(evaluate_spread(bear_call_spread))
 
-    result = {
+    return {
         "ticker": ticker,
         "bull_put_spread": bull_put_spread,
         "bear_call_spread": bear_call_spread,
@@ -77,15 +120,59 @@ def process_ticker(ticker, ticker_data):
             "short_call": short_call,
             "long_call": long_call,
         },
+        "provider_diagnostics": provider_diagnostics,
     }
 
-    return result
+
+def apply_top_n(filtered, top_n):
+    if top_n is None:
+        return filtered
+
+    filtered = dict(filtered)
+
+    qualified = filtered.get("qualified", [])
+    near_miss = filtered.get("near_miss", [])
+    alerts = filtered.get("alerts", [])
+
+    filtered["qualified"] = qualified[:top_n]
+    filtered["near_miss"] = near_miss[:top_n]
+    filtered["alerts"] = alerts[:top_n]
+
+    summary = dict(filtered.get("summary", {}))
+    if summary:
+        summary["top_n_applied"] = top_n
+    filtered["summary"] = summary
+
+    return filtered
+
+
+def build_alerts_only_output(filtered):
+    return {
+        "summary": filtered.get("summary"),
+        "alerts": filtered.get("alerts", []),
+        "provider": filtered.get("provider"),
+        "provider_errors": filtered.get("provider_errors", []),
+        "missing_tickers": filtered.get("missing_tickers", []),
+        "execution_time_seconds": filtered.get("execution_time_seconds"),
+    }
 
 
 def main():
-    tickers = ["SPY", "QQQ", "AAPL", "IWM", "MSFT"]
-    #tickers = ["QQQ"]
+    default_tickers = ["TSLA", "META", "NVDA"]
+    tickers = get_tickers_arg(default_tickers)
+
+    overall_start = time.time()
+    progress_print(f"Starting scan for {len(tickers)} tickers...")
+
+    if is_cached_market_data_available(tickers):
+        progress_print("Using cached market data...")
+    else:
+        progress_print("Fetching fresh market data...")
+
+    provider_start = time.time()
     provider_result = get_market_data(tickers)
+    provider_elapsed = time.time() - provider_start
+    progress_print(f"Market data retrieval completed in {provider_elapsed:.2f}s")
 
     data = provider_result["market_data"]
     missing_tickers = provider_result["missing_tickers"]
@@ -94,14 +181,44 @@ def main():
 
     results = []
 
-    for ticker, ticker_data in data.items():
-        ticker_result = process_ticker(ticker, ticker_data)
-        results.append(ticker_result)
+    available_tickers = list(data.keys())
+    total_available = len(available_tickers)
+    max_workers = min(5, total_available) if total_available > 0 else 1
+
+    progress_print(f"Running with {max_workers} parallel workers...")
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+
+        for ticker in available_tickers:
+            progress_print(f"[SUBMITTED] {ticker}")
+            futures[executor.submit(process_ticker, ticker, data[ticker])] = ticker
+
+        for future in as_completed(futures):
+            ticker = futures[future]
+
+            try:
+                result = future.result()
+                results.append(result)
+                progress_print(f"[DONE] {ticker}")
+            except Exception as e:
+                progress_print(f"[ERROR] {ticker}: {str(e)}")
 
     filtered = filter_results(results)
     filtered["missing_tickers"] = missing_tickers
     filtered["provider"] = provider_name
     filtered["provider_errors"] = provider_errors
+    filtered["execution_time_seconds"] = round(time.time() - overall_start, 2)
+
+    save_scan(filtered)
+
+    filtered = apply_top_n(filtered, TOP_N)
+
+    total_elapsed = time.time() - overall_start
+    progress_print(f"Total execution time: {total_elapsed:.2f}s")
+
+    if ALERTS_ONLY_MODE:
+        filtered = build_alerts_only_output(filtered)
 
     if DEBUG_MODE:
         output = {

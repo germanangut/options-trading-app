@@ -1,11 +1,23 @@
 import os
 from datetime import date, datetime, timedelta
+import sys
+import time
+import json
+import hashlib
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
 
 from mock_data import MOCK_OPTIONS_DATA
 
+DEBUG_MODE = "--debug" in sys.argv
+
+
+
+def debug_print(*args, **kwargs):
+    if DEBUG_MODE:
+        print(*args, **kwargs)
 
 load_dotenv()
 
@@ -16,14 +28,88 @@ ALPACA_TRADING_BASE_URL = os.getenv("ALPACA_TRADING_BASE_URL", "https://paper-ap
 
 OPTION_CONTRACTS_URL = f"{ALPACA_TRADING_BASE_URL}/v2/options/contracts"
 OPTION_SNAPSHOTS_URL = f"{ALPACA_DATA_BASE_URL}/v1beta1/options/snapshots"
-STOCK_LATEST_QUOTES_URL = f"{ALPACA_DATA_BASE_URL}/v2/stocks/quotes/latest"
+#STOCK_LATEST_QUOTES_URL = f"{ALPACA_DATA_BASE_URL}/v2/stocks/quotes/latest"
+STOCK_LATEST_TRADES_URL = f"{ALPACA_DATA_BASE_URL}/v2/stocks/trades/latest"
+
+CACHE_TTL_SECONDS = 60
+CACHE_DIR = Path(".cache")
+CACHE_DIR.mkdir(exist_ok=True)
 
 
-def get_market_data(tickers):
+def build_market_data_cache_key(tickers, dte_min, dte_max):
+    payload = {
+        "tickers": sorted(tickers),
+        "dte_min": dte_min,
+        "dte_max": dte_max,
+        "provider_mode": "alpaca" if has_alpaca_credentials() else "mock",
+    }
+    raw_key = json.dumps(payload, sort_keys=True)
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def get_cache_file_path(cache_key):
+    return CACHE_DIR / f"market_data_{cache_key}.json"
+
+
+def get_cached_market_data(cache_key):
+    cache_file = get_cache_file_path(cache_key)
+
+    if not cache_file.exists():
+        return None
+
+    try:
+        with cache_file.open("r", encoding="utf-8") as f:
+            entry = json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    timestamp = entry.get("timestamp")
+    value = entry.get("value")
+
+    if timestamp is None or value is None:
+        return None
+
+    age = time.time() - timestamp
+    if age > CACHE_TTL_SECONDS:
+        try:
+            cache_file.unlink()
+        except OSError:
+            pass
+        return None
+
+    return value
+
+
+def set_cached_market_data(cache_key, value):
+    cache_file = get_cache_file_path(cache_key)
+
+    entry = {
+        "timestamp": time.time(),
+        "value": value,
+    }
+
+    try:
+        with cache_file.open("w", encoding="utf-8") as f:
+            json.dump(entry, f)
+    except OSError:
+        pass
+    
+    
+
+def get_market_data(tickers, dte_min=30, dte_max=45):
+    cache_key = build_market_data_cache_key(tickers, dte_min, dte_max)
+    cached_value = get_cached_market_data(cache_key)
+
+    if cached_value is not None:
+        return cached_value
+
     if has_alpaca_credentials():
-        return get_alpaca_market_data(tickers)
+        result = get_alpaca_market_data(tickers, dte_min=dte_min, dte_max=dte_max)
+    else:
+        result = get_mock_market_data(tickers)
 
-    return get_mock_market_data(tickers)
+    set_cached_market_data(cache_key, result)
+    return result
 
 
 def has_alpaca_credentials():
@@ -74,16 +160,16 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
 
             option_symbols = [contract["symbol"] for contract in discovered["contracts"]]
             option_snapshots = fetch_option_snapshots_for_symbols(option_symbols)
-            underlying_quote = fetch_underlying_stock_quote(ticker)
+            underlying_trade = fetch_underlying_stock_trade(ticker)
 
             normalized = normalize_discovered_contracts(
-                ticker=ticker,
-                discovered_contracts=discovered["contracts"],
-                option_snapshots=option_snapshots,
-                underlying_quote=underlying_quote,
-                chosen_expiration=discovered["chosen_expiration"],
-                chosen_dte=discovered["chosen_dte"],
-            )
+                        ticker=ticker,
+                        discovered_contracts=discovered["contracts"],
+                        option_snapshots=option_snapshots,
+                        underlying_trade=underlying_trade,
+                        chosen_expiration=discovered["chosen_expiration"],
+                        chosen_dte=discovered["chosen_dte"],
+                    )
 
             if normalized is None:
                 missing_tickers.append(ticker)
@@ -146,17 +232,17 @@ def discover_option_contracts_for_window(ticker, dte_min=30, dte_max=45, limit=1
         chosen_contracts = chosen_expiration["contracts"]
         chosen_dte = chosen_expiration["DTE"]
 
-    print(f"\n=== CONTRACT DISCOVERY DEBUG: {ticker} ===")
-    print("raw_contract_count:", len(raw_contracts))
+    debug_print(f"\n=== CONTRACT DISCOVERY DEBUG: {ticker} ===")
+    debug_print("raw_contract_count:", len(raw_contracts))
 
     if raw_contracts:
-        print("sample_discovered_contract_keys:", list(raw_contracts[0].keys()))
-        print("sample_discovered_contract:", raw_contracts[0])
+        debug_print("sample_discovered_contract_keys:", list(raw_contracts[0].keys()))
+        debug_print("sample_discovered_contract:", raw_contracts[0])
 
-    print("grouped_expiration_count:", len(grouped))
-    print("chosen_expiration:", expiration_date)
-    print("chosen_dte:", chosen_dte)
-    print("chosen_contract_count:", len(chosen_contracts))
+    debug_print("grouped_expiration_count:", len(grouped))
+    debug_print("chosen_expiration:", expiration_date)
+    debug_print("chosen_dte:", chosen_dte)
+    debug_print("chosen_contract_count:", len(chosen_contracts))
 
     if not chosen_contracts:
         return {
@@ -267,13 +353,13 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
     return all_snapshots
 
 
-def fetch_underlying_stock_quote(ticker):
+def fetch_underlying_stock_trade(ticker):
     params = {
         "symbols": ticker,
     }
 
     response = requests.get(
-        STOCK_LATEST_QUOTES_URL,
+        STOCK_LATEST_TRADES_URL,
         headers=alpaca_headers(),
         params=params,
         timeout=20,
@@ -282,7 +368,7 @@ def fetch_underlying_stock_quote(ticker):
 
     raw = response.json()
 
-    for key in ["quotes", "data"]:
+    for key in ["trades", "data"]:
         value = raw.get(key)
         if isinstance(value, dict):
             return value.get(ticker)
@@ -294,7 +380,7 @@ def normalize_discovered_contracts(
     ticker,
     discovered_contracts,
     option_snapshots,
-    underlying_quote,
+    underlying_trade,
     chosen_expiration,
     chosen_dte,
 ):
@@ -305,15 +391,15 @@ def normalize_discovered_contracts(
     discovered_symbols = {contract.get("symbol") for contract in discovered_contracts}
     matching_symbols = discovered_symbols & snapshot_symbols
 
-    print(f"\n=== SYMBOL SNAPSHOT MATCH DEBUG: {ticker} ===")
-    print("discovered_symbol_count:", len(discovered_symbols))
-    print("snapshot_symbol_count:", len(snapshot_symbols))
-    print("matching_symbol_count:", len(matching_symbols))
+    debug_print(f"\n=== SYMBOL SNAPSHOT MATCH DEBUG: {ticker} ===")
+    debug_print("discovered_symbol_count:", len(discovered_symbols))
+    debug_print("snapshot_symbol_count:", len(snapshot_symbols))
+    debug_print("matching_symbol_count:", len(matching_symbols))
 
     if discovered_contracts:
         first_symbol = discovered_contracts[0].get("symbol")
-        print("first_discovered_symbol:", first_symbol)
-        print("first_symbol_in_snapshots:", first_symbol in snapshot_symbols)
+        debug_print("first_discovered_symbol:", first_symbol)
+        debug_print("first_symbol_in_snapshots:", first_symbol in snapshot_symbols)
 
     for raw_contract in discovered_contracts:
         normalized = normalize_discovered_contract(raw_contract, option_snapshots)
@@ -322,16 +408,16 @@ def normalize_discovered_contracts(
         if validate_normalized_contract(normalized):
             normalized_contracts.append(normalized)
 
-    underlying_price = normalize_underlying_price(underlying_quote)
+    underlying_price = normalize_underlying_price(underlying_trade)
 
-    print(f"\n=== NORMALIZED CONTRACT DEBUG: {ticker} ===")
-    print("discovered_contract_count:", len(discovered_contracts))
-    print("all_normalized_contract_count:", len(all_normalized_contracts))
-    print("valid_normalized_contract_count:", len(normalized_contracts))
-    print("underlying_price:", underlying_price)
+    debug_print(f"\n=== NORMALIZED CONTRACT DEBUG: {ticker} ===")
+    debug_print("discovered_contract_count:", len(discovered_contracts))
+    debug_print("all_normalized_contract_count:", len(all_normalized_contracts))
+    debug_print("valid_normalized_contract_count:", len(normalized_contracts))
+    debug_print("underlying_price:", underlying_price)
 
     if all_normalized_contracts:
-        print("sample_normalized_contract:", all_normalized_contracts[0])
+        debug_print("sample_normalized_contract:", all_normalized_contracts[0])
 
     return {
         "underlying_price": underlying_price,
@@ -386,19 +472,21 @@ def normalize_discovered_contract(raw_contract, option_snapshots):
     }
 
 
-def normalize_underlying_price(underlying_quote):
-    if not isinstance(underlying_quote, dict):
+def normalize_underlying_price(underlying_trade):
+    if not isinstance(underlying_trade, dict):
         return None
 
-    bid = underlying_quote.get("bp")
-    ask = underlying_quote.get("ap")
+    price = underlying_trade.get("p")
 
-    if bid is not None and ask is not None:
-        return round((bid + ask) / 2, 4)
+    if price is not None:
+        return round(float(price), 4)
 
     return None
-
 
 def validate_normalized_contract(contract):
     required_fields = ["strike", "type", "delta", "bid", "ask"]
     return all(field in contract and contract[field] is not None for field in required_fields) 
+
+def is_cached_market_data_available(tickers, dte_min=30, dte_max=45):
+    cache_key = build_market_data_cache_key(tickers, dte_min, dte_max)
+    return get_cached_market_data(cache_key) is not None

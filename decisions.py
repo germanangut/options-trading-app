@@ -6,6 +6,22 @@ ROR_NEAR_MISS_MIN = 18.0
 
 MIN_OPEN_INTEREST = 50
 
+from history_reader import get_consistency_scores
+
+
+def compute_consistency_bonus(spread):
+    ticker_scores, top_scores = get_consistency_scores()
+
+    ticker = spread.get("ticker")
+
+    ticker_count = ticker_scores.get(ticker, 0)
+    top_count = top_scores.get(ticker, 0)
+
+    # NEW: normalized + capped bonus
+    raw_bonus = (ticker_count * 0.2) + (top_count * 0.5)
+    bonus = min(10, raw_bonus)
+
+    return bonus
 
 def has_min_open_interest(spread):
     if spread is None:
@@ -76,6 +92,10 @@ def classify_spread(spread):
 
     if qualifies:
         spread["label"] = "High Quality"
+        # Apply consistency bonus
+        bonus = compute_consistency_bonus(spread)
+        spread["consistency_bonus"] = round(bonus, 2)
+        spread["adjusted_score"] = round(spread["score"] + bonus, 2)
         spread["status_reason"] = (
             f"Qualified because POP ({pop}) met or exceeded {POP_THRESHOLD} "
             f"and ROR ({ror}) met or exceeded {ROR_THRESHOLD}."
