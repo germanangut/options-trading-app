@@ -1,3 +1,6 @@
+from history_reader import get_consistency_scores
+
+
 POP_THRESHOLD = 60.0
 ROR_THRESHOLD = 20.0
 
@@ -6,22 +9,6 @@ ROR_NEAR_MISS_MIN = 18.0
 
 MIN_OPEN_INTEREST = 50
 
-from history_reader import get_consistency_scores
-
-
-def compute_consistency_bonus(spread):
-    ticker_scores, top_scores = get_consistency_scores()
-
-    ticker = spread.get("ticker")
-
-    ticker_count = ticker_scores.get(ticker, 0)
-    top_count = top_scores.get(ticker, 0)
-
-    # NEW: normalized + capped bonus
-    raw_bonus = (ticker_count * 0.2) + (top_count * 0.5)
-    bonus = min(10, raw_bonus)
-
-    return bonus
 
 def has_min_open_interest(spread):
     if spread is None:
@@ -52,6 +39,54 @@ def has_strike_sanity(spread):
         return short_strike > underlying_price and long_strike > short_strike
 
     return False
+
+
+def get_price_context_warning(spread):
+    """
+    Warning-only check.
+
+    This does NOT reject the spread.
+    It only flags cases where the underlying price looks suspicious
+    relative to the selected strikes.
+    """
+    if spread is None:
+        return False, None
+
+    strategy_type = spread.get("strategy_type")
+    underlying_price = spread.get("underlying_price")
+    short_strike = spread.get("short_strike")
+    long_strike = spread.get("long_strike")
+
+    if underlying_price is None or short_strike is None or long_strike is None:
+        return True, "Underlying price is missing, so strike context could not be verified."
+
+    if strategy_type == "bull put spread":
+        if not (short_strike < underlying_price and long_strike < underlying_price):
+            return True, (
+                "Underlying price may be unreliable because bull put strikes do not appear below spot."
+            )
+
+    if strategy_type == "bear call spread":
+        if not (short_strike > underlying_price and long_strike > underlying_price):
+            return True, (
+                "Underlying price may be unreliable because bear call strikes do not appear above spot."
+            )
+
+    return False, None
+
+
+def compute_consistency_bonus(spread):
+    ticker_scores, top_scores = get_consistency_scores()
+
+    ticker = spread.get("ticker")
+
+    ticker_count = ticker_scores.get(ticker, 0)
+    top_count = top_scores.get(ticker, 0)
+
+    raw_bonus = (ticker_count * 0.2) + (top_count * 0.5)
+    bonus = min(10, raw_bonus)
+
+    return bonus
 
 
 def classify_spread(spread):
@@ -92,10 +127,6 @@ def classify_spread(spread):
 
     if qualifies:
         spread["label"] = "High Quality"
-        # Apply consistency bonus
-        bonus = compute_consistency_bonus(spread)
-        spread["consistency_bonus"] = round(bonus, 2)
-        spread["adjusted_score"] = round(spread["score"] + bonus, 2)
         spread["status_reason"] = (
             f"Qualified because POP ({pop}) met or exceeded {POP_THRESHOLD} "
             f"and ROR ({ror}) met or exceeded {ROR_THRESHOLD}."
@@ -126,5 +157,18 @@ def classify_spread(spread):
         spread["explanation"] = (
             "This spread does not meet the minimum requirements for the strategy."
         )
+        return spread
+
+    bonus = compute_consistency_bonus(spread)
+    spread["consistency_bonus"] = round(bonus, 2)
+    spread["adjusted_score"] = round(spread["score"] + bonus, 2)
+
+    if "score_breakdown" in spread:
+        spread["score_breakdown"]["consistency_bonus"] = round(bonus, 2)
+        spread["score_breakdown"]["adjusted_score"] = spread["adjusted_score"]
+
+    warning_flag, warning_reason = get_price_context_warning(spread)
+    spread["price_context_warning"] = warning_flag
+    spread["price_context_reason"] = warning_reason
 
     return spread

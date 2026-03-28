@@ -1,3 +1,24 @@
+def compact_spread(spread):
+    if not spread:
+        return None
+
+    return {
+        "ticker": spread.get("ticker"),
+        "strategy_type": spread.get("strategy_type"),
+        "adjusted_score": spread.get("adjusted_score", spread.get("score")),
+        "score": spread.get("score"),
+        "consistency_bonus": spread.get("consistency_bonus", 0),
+        "POP": spread.get("POP"),
+        "ROR": spread.get("ROR"),
+        "short_strike": spread.get("short_strike"),
+        "long_strike": spread.get("long_strike"),
+        "underlying_price": spread.get("underlying_price"),
+        "expiration_date": spread.get("expiration_date"),
+        "DTE": spread.get("DTE"),
+        "label": spread.get("label"),
+    }
+
+
 def build_summary(qualified, near_miss):
     top_overall = qualified[0] if qualified else None
 
@@ -10,9 +31,9 @@ def build_summary(qualified, near_miss):
     return {
         "qualified_count": len(qualified),
         "near_miss_count": len(near_miss),
-        "top_overall": top_overall,
-        "top_bull_put": top_bull_put,
-        "top_bear_call": top_bear_call,
+        "top_overall": compact_spread(top_overall),
+        "top_bull_put": compact_spread(top_bull_put),
+        "top_bear_call": compact_spread(top_bear_call),
     }
 
 
@@ -55,7 +76,6 @@ def filter_results(results):
             elif spread["label"] == "Near Miss":
                 near_miss.append(spread)
 
-    # sorting
     qualified.sort(
         key=lambda s: s.get("adjusted_score", s["score"]),
         reverse=True,

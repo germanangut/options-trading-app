@@ -1,5 +1,24 @@
-POP_WEIGHT = 0.60
-ROR_WEIGHT = 0.40
+def compute_pop(short_delta):
+    return round((1 - abs(short_delta)) * 100, 1)
+
+
+def compute_ror(net_credit, max_risk):
+    if max_risk is None or max_risk <= 0:
+        return 0.0
+
+    return round((net_credit / max_risk) * 100, 1)
+
+
+def compute_score_components(pop, ror):
+    pop_component = pop * 0.6
+    ror_component = ror * 0.4
+    base_score = pop_component + ror_component
+
+    return {
+        "pop_component": round(pop_component, 2),
+        "ror_component": round(ror_component, 2),
+        "base_score": round(base_score, 2),
+    }
 
 
 def evaluate_spread(spread):
@@ -7,18 +26,16 @@ def evaluate_spread(spread):
         return None
 
     short_delta = spread["short_delta"]
-    max_risk = spread["max_risk"]
     net_credit = spread["net_credit"]
+    max_risk = spread["max_risk"]
 
-    if max_risk <= 0:
-        return None
+    pop = compute_pop(short_delta)
+    ror = compute_ror(net_credit, max_risk)
+    components = compute_score_components(pop, ror)
 
-    pop = (1 - abs(short_delta)) * 100
-    ror = (net_credit / max_risk) * 100
-    score = (pop * POP_WEIGHT) + (ror * ROR_WEIGHT)
-
-    spread["POP"] = round(pop, 1)
-    spread["ROR"] = round(ror, 1)
-    spread["score"] = round(score, 2)
+    spread["POP"] = pop
+    spread["ROR"] = ror
+    spread["score"] = components["base_score"]
+    spread["score_breakdown"] = components
 
     return spread
