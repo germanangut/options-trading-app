@@ -11,12 +11,32 @@ from decisions import classify_spread
 from output import filter_results
 from history import save_scan
 from exporter import export_alerts_to_csv
+from profiles import PROFILES
 
 
 
 DEBUG_MODE = "--debug" in sys.argv
 ALERTS_ONLY_MODE = "--alerts-only" in sys.argv
 EXPORT_CSV_MODE = "--export-csv" in sys.argv
+
+def get_profile_arg():
+    if "--profile" not in sys.argv:
+        return None
+
+    try:
+        idx = sys.argv.index("--profile")
+        profile_name = sys.argv[idx + 1].lower()
+
+        if profile_name in PROFILES:
+            return profile_name
+
+        return None
+    except IndexError:
+        return None
+
+
+PROFILE_NAME = get_profile_arg()
+PROFILE_CONFIG = PROFILES.get(PROFILE_NAME) if PROFILE_NAME else None
 
 
 def get_top_n_arg():
@@ -88,10 +108,25 @@ def get_int_arg(flag_name, default_value):
 
 
 TOP_N = get_top_n_arg()
-POP_WEIGHT = get_float_arg("--pop-weight", 0.6)
-ROR_WEIGHT = get_float_arg("--ror-weight", 0.4)
-MIN_SCORE = get_int_arg("--min-score", 65)
-MIN_CONSISTENCY = get_int_arg("--min-consistency", 3)
+POP_WEIGHT = get_float_arg("--pop-weight", None)
+ROR_WEIGHT = get_float_arg("--ror-weight", None)
+MIN_SCORE = get_int_arg("--min-score", None)
+MIN_CONSISTENCY = get_int_arg("--min-consistency", None)
+
+# Apply profile defaults if present
+if PROFILE_CONFIG:
+    POP_WEIGHT = POP_WEIGHT if POP_WEIGHT is not None else PROFILE_CONFIG["pop_weight"]
+    ROR_WEIGHT = ROR_WEIGHT if ROR_WEIGHT is not None else PROFILE_CONFIG["ror_weight"]
+    MIN_SCORE = MIN_SCORE if MIN_SCORE is not None else PROFILE_CONFIG["min_score"]
+    MIN_CONSISTENCY = (
+        MIN_CONSISTENCY if MIN_CONSISTENCY is not None else PROFILE_CONFIG["min_consistency"]
+    )
+
+# Final fallback defaults
+POP_WEIGHT = 0.6 if POP_WEIGHT is None else POP_WEIGHT
+ROR_WEIGHT = 0.4 if ROR_WEIGHT is None else ROR_WEIGHT
+MIN_SCORE = 65 if MIN_SCORE is None else MIN_SCORE
+MIN_CONSISTENCY = 3 if MIN_CONSISTENCY is None else MIN_CONSISTENCY
 
 
 def progress_print(message):
@@ -210,6 +245,8 @@ def main():
     progress_print(f"Starting scan for {len(tickers)} tickers...")
     progress_print(f"Scoring weights -> POP: {POP_WEIGHT}, ROR: {ROR_WEIGHT}")
     progress_print(f"Alert thresholds -> Score: {MIN_SCORE}, Consistency: {MIN_CONSISTENCY}")
+    if PROFILE_NAME:
+        progress_print(f"Using profile: {PROFILE_NAME}")
 
     if is_cached_market_data_available(tickers):
         progress_print("Using cached market data...")
@@ -257,6 +294,7 @@ def main():
     filtered["provider"] = provider_name
     filtered["provider_errors"] = provider_errors
     filtered["execution_time_seconds"] = round(time.time() - overall_start, 2)
+    filtered["profile"] = PROFILE_NAME
     filtered["scoring_weights"] = {
         "pop_weight": POP_WEIGHT,
         "ror_weight": ROR_WEIGHT,
