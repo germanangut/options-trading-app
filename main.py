@@ -33,12 +33,6 @@ def get_top_n_arg():
         return None
 
 
-TOP_N = get_top_n_arg()
-
-
-def progress_print(message):
-    print(message, file=sys.stderr, flush=True)
-
 def get_tickers_arg(default_tickers):
     if "--tickers" not in sys.argv:
         return default_tickers
@@ -57,7 +51,33 @@ def get_tickers_arg(default_tickers):
     except IndexError:
         return default_tickers
 
-def process_ticker(ticker, ticker_data):
+
+def get_float_arg(flag_name, default_value):
+    if flag_name not in sys.argv:
+        return default_value
+
+    try:
+        idx = sys.argv.index(flag_name)
+        value = float(sys.argv[idx + 1])
+
+        if value < 0:
+            return default_value
+
+        return value
+    except (IndexError, ValueError):
+        return default_value
+
+
+TOP_N = get_top_n_arg()
+POP_WEIGHT = get_float_arg("--pop-weight", 0.6)
+ROR_WEIGHT = get_float_arg("--ror-weight", 0.4)
+
+
+def progress_print(message):
+    print(message, file=sys.stderr, flush=True)
+
+
+def process_ticker(ticker, ticker_data, pop_weight, ror_weight):
     contracts = ticker_data["contracts"]
     underlying_price = ticker_data["underlying_price"]
     expiration_date = ticker_data["expiration_date"]
@@ -105,8 +125,12 @@ def process_ticker(ticker, ticker_data):
         dte=dte,
     )
 
-    bull_put_spread = classify_spread(evaluate_spread(bull_put_spread))
-    bear_call_spread = classify_spread(evaluate_spread(bear_call_spread))
+    bull_put_spread = classify_spread(
+        evaluate_spread(bull_put_spread, pop_weight=pop_weight, ror_weight=ror_weight)
+    )
+    bear_call_spread = classify_spread(
+        evaluate_spread(bear_call_spread, pop_weight=pop_weight, ror_weight=ror_weight)
+    )
 
     return {
         "ticker": ticker,
@@ -163,6 +187,7 @@ def main():
 
     overall_start = time.time()
     progress_print(f"Starting scan for {len(tickers)} tickers...")
+    progress_print(f"Scoring weights -> POP: {POP_WEIGHT}, ROR: {ROR_WEIGHT}")
 
     if is_cached_market_data_available(tickers):
         progress_print("Using cached market data...")
@@ -192,7 +217,7 @@ def main():
 
         for ticker in available_tickers:
             progress_print(f"[SUBMITTED] {ticker}")
-            futures[executor.submit(process_ticker, ticker, data[ticker])] = ticker
+            futures[executor.submit(process_ticker, ticker, data[ticker], POP_WEIGHT, ROR_WEIGHT)] = ticker
 
         for future in as_completed(futures):
             ticker = futures[future]
@@ -209,6 +234,10 @@ def main():
     filtered["provider"] = provider_name
     filtered["provider_errors"] = provider_errors
     filtered["execution_time_seconds"] = round(time.time() - overall_start, 2)
+    filtered["scoring_weights"] = {
+        "pop_weight": POP_WEIGHT,
+        "ror_weight": ROR_WEIGHT,
+    }
 
     save_scan(filtered)
 

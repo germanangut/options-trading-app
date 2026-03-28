@@ -1,3 +1,7 @@
+DEFAULT_POP_WEIGHT = 0.6
+DEFAULT_ROR_WEIGHT = 0.4
+
+
 def compute_pop(short_delta):
     return round((1 - abs(short_delta)) * 100, 1)
 
@@ -9,19 +13,34 @@ def compute_ror(net_credit, max_risk):
     return round((net_credit / max_risk) * 100, 1)
 
 
-def compute_score_components(pop, ror):
-    pop_component = pop * 0.6
-    ror_component = ror * 0.4
+def normalize_weights(pop_weight=None, ror_weight=None):
+    pop_weight = DEFAULT_POP_WEIGHT if pop_weight is None else pop_weight
+    ror_weight = DEFAULT_ROR_WEIGHT if ror_weight is None else ror_weight
+
+    total = pop_weight + ror_weight
+    if total <= 0:
+        return DEFAULT_POP_WEIGHT, DEFAULT_ROR_WEIGHT
+
+    return pop_weight / total, ror_weight / total
+
+
+def compute_score_components(pop, ror, pop_weight=None, ror_weight=None):
+    pop_weight, ror_weight = normalize_weights(pop_weight, ror_weight)
+
+    pop_component = pop * pop_weight
+    ror_component = ror * ror_weight
     base_score = pop_component + ror_component
 
     return {
+        "pop_weight": round(pop_weight, 4),
+        "ror_weight": round(ror_weight, 4),
         "pop_component": round(pop_component, 2),
         "ror_component": round(ror_component, 2),
         "base_score": round(base_score, 2),
     }
 
 
-def evaluate_spread(spread):
+def evaluate_spread(spread, pop_weight=None, ror_weight=None):
     if spread is None:
         return None
 
@@ -31,7 +50,7 @@ def evaluate_spread(spread):
 
     pop = compute_pop(short_delta)
     ror = compute_ror(net_credit, max_risk)
-    components = compute_score_components(pop, ror)
+    components = compute_score_components(pop, ror, pop_weight=pop_weight, ror_weight=ror_weight)
 
     spread["POP"] = pop
     spread["ROR"] = ror
