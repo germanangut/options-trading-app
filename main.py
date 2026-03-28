@@ -70,10 +70,28 @@ def get_float_arg(flag_name, default_value):
     except (IndexError, ValueError):
         return default_value
 
+def get_int_arg(flag_name, default_value):
+    if flag_name not in sys.argv:
+        return default_value
+
+    try:
+        idx = sys.argv.index(flag_name)
+        value = int(sys.argv[idx + 1])
+
+        if value < 0:
+            return default_value
+
+        return value
+    except (IndexError, ValueError):
+        return default_value
+
+
 
 TOP_N = get_top_n_arg()
 POP_WEIGHT = get_float_arg("--pop-weight", 0.6)
 ROR_WEIGHT = get_float_arg("--ror-weight", 0.4)
+MIN_SCORE = get_int_arg("--min-score", 65)
+MIN_CONSISTENCY = get_int_arg("--min-consistency", 3)
 
 
 def progress_print(message):
@@ -191,6 +209,7 @@ def main():
     overall_start = time.time()
     progress_print(f"Starting scan for {len(tickers)} tickers...")
     progress_print(f"Scoring weights -> POP: {POP_WEIGHT}, ROR: {ROR_WEIGHT}")
+    progress_print(f"Alert thresholds -> Score: {MIN_SCORE}, Consistency: {MIN_CONSISTENCY}")
 
     if is_cached_market_data_available(tickers):
         progress_print("Using cached market data...")
@@ -232,7 +251,8 @@ def main():
             except Exception as e:
                 progress_print(f"[ERROR] {ticker}: {str(e)}")
 
-    filtered = filter_results(results)
+    filtered = filter_results(results,min_score=MIN_SCORE,min_consistency=MIN_CONSISTENCY)
+
     filtered["missing_tickers"] = missing_tickers
     filtered["provider"] = provider_name
     filtered["provider_errors"] = provider_errors
@@ -240,7 +260,12 @@ def main():
     filtered["scoring_weights"] = {
         "pop_weight": POP_WEIGHT,
         "ror_weight": ROR_WEIGHT,
-    }
+        }
+    filtered["alert_thresholds"] = {
+        "min_score": MIN_SCORE,
+        "min_consistency": MIN_CONSISTENCY,
+        }
+
 
     save_scan(filtered)
     if EXPORT_CSV_MODE:

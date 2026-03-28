@@ -37,21 +37,21 @@ def build_summary(qualified, near_miss):
     }
 
 
-def build_alerts(qualified):
+def build_alerts(qualified, min_score=65, min_consistency=3):
     alerts = []
 
     for spread in qualified:
         if (
             spread["label"] == "High Quality"
-            and spread.get("adjusted_score", 0) >= 65
-            and spread.get("consistency_bonus", 0) >= 3
+            and spread.get("adjusted_score", 0) >= min_score
+            and spread.get("consistency_bonus", 0) >= min_consistency
         ):
             alerts.append(spread)
 
     return alerts
 
 
-def filter_results(results):
+def filter_results(results, min_score=65, min_consistency=3):
     qualified = []
     near_miss = []
     ticker_diagnostics = []
@@ -86,7 +86,11 @@ def filter_results(results):
     )
 
     summary = build_summary(qualified, near_miss)
-    alerts = build_alerts(qualified)
+    alerts = build_alerts(
+                qualified,
+                min_score=min_score,
+                min_consistency=min_consistency
+            )
 
     return {
         "summary": summary,
