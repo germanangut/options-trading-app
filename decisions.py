@@ -42,13 +42,6 @@ def has_strike_sanity(spread):
 
 
 def get_price_context_warning(spread):
-    """
-    Warning-only check.
-
-    This does NOT reject the spread.
-    It only flags cases where the underlying price looks suspicious
-    relative to the selected strikes.
-    """
     if spread is None:
         return False, None
 
@@ -87,6 +80,43 @@ def compute_consistency_bonus(spread):
     bonus = min(10, raw_bonus)
 
     return bonus
+
+
+def compute_penalties(spread):
+    """
+    Soft penalties only.
+    They reduce ranking attractiveness without rejecting the spread.
+    """
+    short_oi = spread.get("short_open_interest", 0) or 0
+    long_oi = spread.get("long_open_interest", 0) or 0
+    spread_width = spread.get("spread_width", 0) or 0
+
+    liquidity_penalty = 0.0
+    width_penalty = 0.0
+
+    # Soft liquidity penalty:
+    # hard reject is already below MIN_OPEN_INTEREST.
+    # here we penalize trades that barely clear the threshold.
+    min_leg_oi = min(short_oi, long_oi)
+    if min_leg_oi < 100:
+        liquidity_penalty = 2.0
+    elif min_leg_oi < 200:
+        liquidity_penalty = 1.0
+
+    # Soft width penalty:
+    # encourage tighter spreads when otherwise similar.
+    if spread_width > 20:
+        width_penalty = 2.0
+    elif spread_width > 10:
+        width_penalty = 1.0
+
+    total_penalty = liquidity_penalty + width_penalty
+
+    return {
+        "liquidity_penalty": round(liquidity_penalty, 2),
+        "width_penalty": round(width_penalty, 2),
+        "total_penalty": round(total_penalty, 2),
+    }
 
 
 def classify_spread(spread):
@@ -160,11 +190,19 @@ def classify_spread(spread):
         return spread
 
     bonus = compute_consistency_bonus(spread)
+    penalties = compute_penalties(spread)
+
     spread["consistency_bonus"] = round(bonus, 2)
-    spread["adjusted_score"] = round(spread["score"] + bonus, 2)
+    spread["penalties"] = penalties
+
+    adjusted_score = spread["score"] + bonus - penalties["total_penalty"]
+    spread["adjusted_score"] = round(adjusted_score, 2)
 
     if "score_breakdown" in spread:
         spread["score_breakdown"]["consistency_bonus"] = round(bonus, 2)
+        spread["score_breakdown"]["liquidity_penalty"] = penalties["liquidity_penalty"]
+        spread["score_breakdown"]["width_penalty"] = penalties["width_penalty"]
+        spread["score_breakdown"]["total_penalty"] = penalties["total_penalty"]
         spread["score_breakdown"]["adjusted_score"] = spread["adjusted_score"]
 
     warning_flag, warning_reason = get_price_context_warning(spread)
