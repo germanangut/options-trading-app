@@ -10,10 +10,13 @@ from metrics import evaluate_spread
 from decisions import classify_spread
 from output import filter_results
 from history import save_scan
+from exporter import export_alerts_to_csv
+
 
 
 DEBUG_MODE = "--debug" in sys.argv
 ALERTS_ONLY_MODE = "--alerts-only" in sys.argv
+EXPORT_CSV_MODE = "--export-csv" in sys.argv
 
 
 def get_top_n_arg():
@@ -240,6 +243,9 @@ def main():
     }
 
     save_scan(filtered)
+    if EXPORT_CSV_MODE:
+        exported_alerts_path = export_alerts_to_csv(filtered.get("alerts", []))
+        filtered["alerts_export_path"] = exported_alerts_path
 
     filtered = apply_top_n(filtered, TOP_N)
 

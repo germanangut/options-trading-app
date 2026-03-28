@@ -1,0 +1,2 @@
+ticker,strategy_type,adjusted_score,score,POP,ROR,consistency_bonus,liquidity_penalty,width_penalty,total_penalty,short_strike,long_strike,underlying_price,expiration_date,DTE,label,status_reason
+NVDA,bear call spread,65.54,55.54,70.9,32.5,10,0.0,0.0,0.0,180.0,185.0,167.45,2026-05-01,35,High Quality,Qualified because POP (70.9) met or exceeded 60.0 and ROR (32.5) met or exceeded 20.0.
