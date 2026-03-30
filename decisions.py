@@ -93,31 +93,29 @@ def compute_penalties(spread):
 
     liquidity_penalty = 0.0
     width_penalty = 0.0
+    volatility_penalty = compute_volatility_penalty(spread)
 
-    # Soft liquidity penalty:
-    # hard reject is already below MIN_OPEN_INTEREST.
-    # here we penalize trades that barely clear the threshold.
+    # Soft liquidity penalty
     min_leg_oi = min(short_oi, long_oi)
     if min_leg_oi < 100:
         liquidity_penalty = 2.0
     elif min_leg_oi < 200:
         liquidity_penalty = 1.0
 
-    # Soft width penalty:
-    # encourage tighter spreads when otherwise similar.
+    # Soft width penalty
     if spread_width > 20:
         width_penalty = 2.0
     elif spread_width > 10:
         width_penalty = 1.0
 
-    total_penalty = liquidity_penalty + width_penalty
+    total_penalty = liquidity_penalty + width_penalty + volatility_penalty
 
     return {
         "liquidity_penalty": round(liquidity_penalty, 2),
         "width_penalty": round(width_penalty, 2),
+        "volatility_penalty": round(volatility_penalty, 2),
         "total_penalty": round(total_penalty, 2),
     }
-
 
 def classify_spread(spread):
     if spread is None:
@@ -202,11 +200,21 @@ def classify_spread(spread):
         spread["score_breakdown"]["consistency_bonus"] = round(bonus, 2)
         spread["score_breakdown"]["liquidity_penalty"] = penalties["liquidity_penalty"]
         spread["score_breakdown"]["width_penalty"] = penalties["width_penalty"]
+        spread["score_breakdown"]["volatility_penalty"] = penalties["volatility_penalty"]
         spread["score_breakdown"]["total_penalty"] = penalties["total_penalty"]
         spread["score_breakdown"]["adjusted_score"] = spread["adjusted_score"]
-
+        
     warning_flag, warning_reason = get_price_context_warning(spread)
     spread["price_context_warning"] = warning_flag
     spread["price_context_reason"] = warning_reason
 
     return spread
+
+def compute_volatility_penalty(spread):
+    volatility_context = spread.get("volatility_context")
+
+    if volatility_context == "rich_premium":
+        return 0.0
+    if volatility_context == "balanced_premium":
+        return 0.5
+    return 2.0

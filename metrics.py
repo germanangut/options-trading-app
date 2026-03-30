@@ -82,3 +82,10 @@ def evaluate_spread(spread, pop_weight=None, ror_weight=None):
     spread["volatility_context"] = volatility_context
 
     return spread
+
+def compute_volatility_penalty(volatility_context):
+    if volatility_context == "rich_premium":
+        return 0.0
+    if volatility_context == "balanced_premium":
+        return 0.5
+    return 2.0
