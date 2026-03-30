@@ -1,0 +1,11 @@
+profile: balanced
+ticker_group: tech
+
+pop_weight: 0.6
+ror_weight: 0.4
+
+min_score: 65
+min_consistency: 3
+
+dte_min: 20
+dte_max: 35
