@@ -40,16 +40,18 @@ def build_summary(qualified, near_miss):
 def build_alerts(qualified, min_score=65, min_consistency=3):
     alerts = []
 
+    allowed_volatility_contexts = {"rich_premium", "balanced_premium"}
+
     for spread in qualified:
         if (
             spread["label"] == "High Quality"
             and spread.get("adjusted_score", 0) >= min_score
             and spread.get("consistency_bonus", 0) >= min_consistency
+            and spread.get("volatility_context") in allowed_volatility_contexts
         ):
             alerts.append(spread)
 
     return alerts
-
 
 def filter_results(results, min_score=65, min_consistency=3):
     qualified = []
