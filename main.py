@@ -426,7 +426,7 @@ def main():
     if ALERTS_ONLY_MODE:
         filtered = build_alerts_only_output(filtered)
 
-    if DEBUG_MODE:
+    if DEBUG_MODE: 
         output = {
             "user_view": filtered,
             "debug_view": results,
@@ -438,4 +438,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    main()  
