@@ -188,9 +188,20 @@ def classify_spread(spread):
         return spread
 
     bonus = compute_consistency_bonus(spread)
+    volatility_boost = compute_volatility_boost(spread)
     penalties = compute_penalties(spread)
 
     spread["consistency_bonus"] = round(bonus, 2)
+    spread["volatility_boost"] = round(volatility_boost, 2)
+    spread["penalties"] = penalties
+
+    adjusted_score = (
+        spread["score"]
+        + bonus
+        + volatility_boost
+        - penalties["total_penalty"]
+    )
+    spread["adjusted_score"] = round(adjusted_score, 2)
     spread["penalties"] = penalties
 
     adjusted_score = spread["score"] + bonus - penalties["total_penalty"]
@@ -198,12 +209,13 @@ def classify_spread(spread):
 
     if "score_breakdown" in spread:
         spread["score_breakdown"]["consistency_bonus"] = round(bonus, 2)
+        spread["score_breakdown"]["volatility_boost"] = round(volatility_boost, 2)
         spread["score_breakdown"]["liquidity_penalty"] = penalties["liquidity_penalty"]
         spread["score_breakdown"]["width_penalty"] = penalties["width_penalty"]
         spread["score_breakdown"]["volatility_penalty"] = penalties["volatility_penalty"]
         spread["score_breakdown"]["total_penalty"] = penalties["total_penalty"]
         spread["score_breakdown"]["adjusted_score"] = spread["adjusted_score"]
-        
+            
     warning_flag, warning_reason = get_price_context_warning(spread)
     spread["price_context_warning"] = warning_flag
     spread["price_context_reason"] = warning_reason
@@ -218,3 +230,12 @@ def compute_volatility_penalty(spread):
     if volatility_context == "balanced_premium":
         return 0.5
     return 2.0
+
+def compute_volatility_boost(spread):
+    volatility_context = spread.get("volatility_context")
+
+    if volatility_context == "rich_premium":
+        return 1.0
+
+    return 0.0
+    
