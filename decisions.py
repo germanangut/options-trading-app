@@ -219,6 +219,7 @@ def classify_spread(spread):
     warning_flag, warning_reason = get_price_context_warning(spread)
     spread["price_context_warning"] = warning_flag
     spread["price_context_reason"] = warning_reason
+    spread["decision_summary"] = build_decision_summary(spread)
 
     return spread
 
@@ -232,10 +233,51 @@ def compute_volatility_penalty(spread):
     return 2.0
 
 def compute_volatility_boost(spread):
+
     volatility_context = spread.get("volatility_context")
 
     if volatility_context == "rich_premium":
         return 1.0
 
     return 0.0
-    
+
+
+def build_decision_summary(spread):
+    if spread is None:
+        return None
+
+    label = spread.get("label")
+    pop = spread.get("POP")
+    ror = spread.get("ROR")
+    volatility_context = spread.get("volatility_context")
+    penalties = spread.get("penalties", {})
+
+    penalty_parts = []
+    if penalties.get("liquidity_penalty", 0) > 0:
+        penalty_parts.append("liquidity friction")
+    if penalties.get("width_penalty", 0) > 0:
+        penalty_parts.append("wide spread structure")
+    if penalties.get("volatility_penalty", 0) > 0:
+        penalty_parts.append("non-rich premium")
+
+    if not penalty_parts:
+        friction_text = "low execution friction"
+    else:
+        friction_text = "some execution friction from " + ", ".join(penalty_parts)
+
+    if label == "High Quality":
+        return (
+            f"High quality because it combines POP {pop}, ROR {ror}, "
+            f"{volatility_context.replace('_', ' ')}, and {friction_text}."
+        )
+
+    if label == "Near Miss":
+        return (
+            f"Near miss because it showed some attractive traits, including "
+            f"{volatility_context.replace('_', ' ')}, but did not fully meet the scoring thresholds."
+        )
+
+    return (
+        f"Rejected because the trade did not meet the minimum quality bar, "
+        f"despite {volatility_context.replace('_', ' ') if volatility_context else 'its current setup'}."
+    )
