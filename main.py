@@ -574,8 +574,6 @@ def main():
         min_consistency=min_consistency,
     )
 
-    save_scan(filtered)
-
     filtered = apply_top_n(filtered, top_n)
 
     filtered["missing_tickers"] = missing_tickers
@@ -630,6 +628,7 @@ def main():
 
         print(json.dumps(output, indent=2))
     
+    save_scan(filtered)
 
 if __name__ == "__main__":
     main()  

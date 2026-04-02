@@ -1,18 +1,39 @@
 import json
-from pathlib import Path
+import os
 from datetime import datetime
 
-HISTORY_DIR = Path(".history")
-HISTORY_DIR.mkdir(exist_ok=True)
 
-SCAN_FILE = HISTORY_DIR / "scans.jsonl"
+HISTORY_DIR = ".history"
 
-def save_scan(result):
-    entry = {
-        "timestamp": datetime.utcnow().isoformat(),
-        "summary": result.get("summary"),
-        "qualified": result.get("qualified"),
+
+def ensure_history_dir():
+    if not os.path.exists(HISTORY_DIR):
+        os.makedirs(HISTORY_DIR)
+
+
+def get_history_file():
+    today = datetime.now().strftime("%Y-%m-%d")
+    return os.path.join(HISTORY_DIR, f"run_{today}.jsonl")
+
+
+def build_run_snapshot(filtered):
+    return {
+        "timestamp": datetime.now().isoformat(),
+        "profile": filtered.get("profile"),
+        "ticker_group": filtered.get("ticker_group"),
+        "execution_time": filtered.get("execution_time_seconds"),
+        "alerts_count": len(filtered.get("alerts", [])),
+        "qualified_count": len(filtered.get("qualified", [])),
+        "top_overall": filtered.get("summary", {}).get("top_overall"),
+        "alerts": filtered.get("alerts", []),
     }
 
-    with SCAN_FILE.open("a", encoding="utf-8") as f:
-        f.write(json.dumps(entry) + "\n")
+
+def save_scan(filtered):
+    ensure_history_dir()
+
+    file_path = get_history_file()
+    snapshot = build_run_snapshot(filtered)
+
+    with open(file_path, "a") as f:
+        f.write(json.dumps(snapshot) + "\n")
