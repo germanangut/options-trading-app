@@ -1,5 +1,6 @@
 import json
 import os
+from collections import Counter
 from datetime import datetime
 
 
@@ -37,15 +38,6 @@ def save_scan(filtered):
 
     with open(file_path, "a") as f:
         f.write(json.dumps(snapshot) + "\n")
-
-
-import json
-import os
-from collections import Counter
-from datetime import datetime
-
-
-HISTORY_DIR = "history"
 
 
 def ensure_history_dir():
@@ -130,3 +122,37 @@ def compute_trend_insights():
         "top_strategies": strategy_counter.most_common(5),
         "recurring_alerts": recurring_alert_counter.most_common(5),
     }
+
+def compute_alert_stability():
+    runs = load_history_runs()
+
+    from collections import Counter
+
+    alert_counter = Counter()
+
+    for run in runs:
+        alerts = run.get("alerts", [])
+        for alert in alerts:
+            ticker = alert.get("ticker")
+            strategy = alert.get("strategy_type")
+
+            if ticker and strategy:
+                key = f"{ticker}|{strategy}"
+                alert_counter[key] += 1
+
+    stability_map = {}
+
+    for key, count in alert_counter.items():
+        if count >= 3:
+            stability = "stable"
+        elif count == 2:
+            stability = "emerging"
+        else:
+            stability = "new"
+
+        stability_map[key] = {
+            "count": count,
+            "stability": stability
+        }
+
+    return stability_map

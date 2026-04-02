@@ -7,14 +7,13 @@ from config_loader import load_config
 from data_provider import get_market_data, is_cached_market_data_available
 from decisions import classify_spread
 from exporter import export_alerts_to_csv
-from history import save_scan
+from history import save_scan, compute_trend_insights, compute_alert_stability
 from metrics import evaluate_spread
 from output import filter_results
 from profiles import PROFILES
 from selection import select_leg
 from spreads import build_spread
 from ticker_groups import TICKER_GROUPS
-from history import save_scan, compute_trend_insights
 
 
 DEBUG_MODE = "--debug" in sys.argv
@@ -24,44 +23,6 @@ COMPACT_MODE = "--compact" in sys.argv
 EXPLAIN_SCORE_MODE = "--explain-score" in sys.argv
 DAILY_SUMMARY_MODE = "--daily-summary" in sys.argv
 TREND_INSIGHTS_MODE = "--trend-insights" in sys.argv
-
-def build_trend_insights_output():
-    insights = compute_trend_insights()
-
-    lines = []
-    lines.append("TREND INSIGHTS")
-    lines.append("")
-    lines.append(f"Runs analyzed: {insights.get('runs_analyzed', 0)}")
-    lines.append("")
-
-    lines.append("Top Tickers")
-    top_tickers = insights.get("top_tickers", [])
-    if top_tickers:
-        for i, (ticker, count) in enumerate(top_tickers, start=1):
-            lines.append(f"{i}. {ticker} — {count} appearances")
-    else:
-        lines.append("No ticker history yet")
-    lines.append("")
-
-    lines.append("Top Strategies")
-    top_strategies = insights.get("top_strategies", [])
-    if top_strategies:
-        for i, (strategy, count) in enumerate(top_strategies, start=1):
-            lines.append(f"{i}. {strategy} — {count} appearances")
-    else:
-        lines.append("No strategy history yet")
-    lines.append("")
-
-    lines.append("Recurring Alerts")
-    recurring_alerts = insights.get("recurring_alerts", [])
-    if recurring_alerts:
-        for i, (name, count) in enumerate(recurring_alerts, start=1):
-            lines.append(f"{i}. {name} — {count} times")
-    else:
-        lines.append("No recurring alerts yet")
-
-    return "\n".join(lines)
-
 
 
 def progress_print(message):
@@ -255,7 +216,6 @@ def apply_top_n(filtered, top_n):
 
     return trimmed
 
-
 def build_alerts_only_output(filtered):
     return {
         "summary": filtered.get("summary"),
@@ -271,6 +231,7 @@ def build_alerts_only_output(filtered):
         "dte_range": filtered.get("dte_range"),
         "alerts_export_path": filtered.get("alerts_export_path"),
     }
+
 
 def format_compact_spread(spread, index=None):
     if not spread:
@@ -293,8 +254,7 @@ def build_compact_output(filtered):
     lines = []
 
     summary = filtered.get("summary", {})
-    qualified = filtered.get("qualified", [])
-    top_overall = qualified[0] if qualified else None
+    top_overall = filtered.get("qualified", [None])[0] if filtered.get("qualified") else None
 
     lines.append("SUMMARY")
     lines.append(f"Qualified: {summary.get('qualified_count', 0)}")
@@ -317,6 +277,7 @@ def build_compact_output(filtered):
         lines.append("No alerts")
 
     return "\n".join(lines)
+
 
 def format_explain_score_spread(spread, index=None):
     if not spread:
@@ -348,6 +309,7 @@ def format_explain_score_spread(spread, index=None):
     ]
     return "\n".join(lines)
 
+
 def build_explain_score_output(filtered):
     lines = []
 
@@ -375,6 +337,7 @@ def build_explain_score_output(filtered):
 
     return "\n".join(lines).strip()
 
+
 def format_summary_line(spread, index=None):
     if not spread:
         return ""
@@ -385,12 +348,14 @@ def format_summary_line(spread, index=None):
         f"Adjusted {spread.get('adjusted_score')}"
     )
 
+
 def build_daily_summary_output(filtered):
     lines = []
 
     summary = filtered.get("summary", {})
     alerts = filtered.get("alerts", [])
-    top_overall = summary.get("top_overall")
+    qualified = filtered.get("qualified", [])
+    top_overall = qualified[0] if qualified else None
     dte_range = filtered.get("dte_range", {})
     profile = filtered.get("profile")
     ticker_group = filtered.get("ticker_group")
@@ -402,9 +367,7 @@ def build_daily_summary_output(filtered):
     lines.append("Run Context")
     lines.append(f"- Profile: {profile}")
     lines.append(f"- Ticker Group: {ticker_group}")
-    lines.append(
-        f"- DTE Range: {dte_range.get('dte_min')}-{dte_range.get('dte_max')}"
-    )
+    lines.append(f"- DTE Range: {dte_range.get('dte_min')}-{dte_range.get('dte_max')}")
     lines.append(f"- Execution Time: {execution_time}s")
     lines.append("")
 
@@ -427,7 +390,6 @@ def build_daily_summary_output(filtered):
         lines.append("No alerts")
     lines.append("")
 
-    # Simple narrative takeaway
     rich_count = sum(
         1 for spread in alerts if spread.get("volatility_context") == "rich_premium"
     )
@@ -457,12 +419,62 @@ def build_daily_summary_output(filtered):
 
     return "\n".join(lines)
 
-def main():
-    config = load_config()
 
+def build_trend_insights_output():
+    insights = compute_trend_insights()
+
+    lines = []
+    lines.append("TREND INSIGHTS")
+    lines.append("")
+    lines.append(f"Runs analyzed: {insights.get('runs_analyzed', 0)}")
+    lines.append("")
+
+    lines.append("Top Tickers")
+    top_tickers = insights.get("top_tickers", [])
+    if top_tickers:
+        for i, (ticker, count) in enumerate(top_tickers, start=1):
+            lines.append(f"{i}. {ticker} — {count} appearances")
+    else:
+        lines.append("No ticker history yet")
+    lines.append("")
+
+    lines.append("Top Strategies")
+    top_strategies = insights.get("top_strategies", [])
+    if top_strategies:
+        for i, (strategy, count) in enumerate(top_strategies, start=1):
+            lines.append(f"{i}. {strategy} — {count} appearances")
+    else:
+        lines.append("No strategy history yet")
+    lines.append("")
+
+    lines.append("Recurring Alerts")
+    recurring_alerts = insights.get("recurring_alerts", [])
+    if recurring_alerts:
+        for i, (name, count) in enumerate(recurring_alerts, start=1):
+            lines.append(f"{i}. {name} — {count} times")
+    else:
+        lines.append("No recurring alerts yet")
+
+    return "\n".join(lines)
+
+
+def enrich_spreads_with_stability(spreads, stability_map):
+    for spread in spreads:
+        key = f"{spread.get('ticker')}|{spread.get('strategy_type')}"
+        stability_info = stability_map.get(
+            key,
+            {"count": 0, "stability": "new"}
+        )
+        spread["stability_count"] = stability_info["count"]
+        spread["stability_level"] = stability_info["stability"]
+
+
+def main():
     if TREND_INSIGHTS_MODE:
         print(build_trend_insights_output())
         return
+
+    config = load_config()
 
     cli_tickers_provided = has_cli_flag("--tickers")
     cli_group_provided = has_cli_flag("--group")
@@ -472,15 +484,9 @@ def main():
     default_tickers = ["TSLA", "META", "NVDA"]
     top_n = get_top_n_arg()
 
-    # Profile source
     profile_name = get_profile_arg() or config.get("profile")
     profile_config = PROFILES.get(profile_name) if profile_name else None
 
-    # Ticker/group precedence:
-    # 1. explicit CLI tickers
-    # 2. explicit CLI group
-    # 3. config group
-    # 4. default tickers
     config_group_name = config.get("ticker_group")
     group_name = None
 
@@ -495,14 +501,12 @@ def main():
     else:
         tickers = default_tickers
 
-    # Raw CLI values first
     pop_weight = get_float_arg("--pop-weight", None)
     ror_weight = get_float_arg("--ror-weight", None)
     min_score = get_int_arg("--min-score", None)
     min_consistency = get_int_arg("--min-consistency", None)
 
     if cli_profile_provided and profile_config:
-        # Explicit CLI profile beats config, unless specific CLI scoring flags were also provided
         pop_weight = pop_weight if pop_weight is not None else profile_config["pop_weight"]
         ror_weight = ror_weight if ror_weight is not None else profile_config["ror_weight"]
         min_score = min_score if min_score is not None else profile_config["min_score"]
@@ -512,7 +516,6 @@ def main():
             else profile_config["min_consistency"]
         )
 
-        # If anything still missing, fall back to config
         pop_weight = pop_weight if pop_weight is not None else config.get("pop_weight")
         ror_weight = ror_weight if ror_weight is not None else config.get("ror_weight")
         min_score = min_score if min_score is not None else config.get("min_score")
@@ -520,7 +523,6 @@ def main():
             min_consistency if min_consistency is not None else config.get("min_consistency")
         )
     else:
-        # Normal case: CLI > config > profile defaults
         pop_weight = pop_weight if pop_weight is not None else config.get("pop_weight")
         ror_weight = ror_weight if ror_weight is not None else config.get("ror_weight")
         min_score = min_score if min_score is not None else config.get("min_score")
@@ -538,16 +540,13 @@ def main():
                 else profile_config["min_consistency"]
             )
 
-    # Final fallback defaults
     pop_weight = 0.6 if pop_weight is None else pop_weight
     ror_weight = 0.4 if ror_weight is None else ror_weight
     min_score = 65 if min_score is None else min_score
     min_consistency = 3 if min_consistency is None else min_consistency
 
-    # Hide profile in logs/output if explicit scoring overrides were used
     effective_profile_name = None if cli_scoring_override_provided else profile_name
 
-    # DTE config support
     dte_min = config.get("dte_min", 30)
     dte_max = config.get("dte_max", 45)
 
@@ -618,6 +617,11 @@ def main():
         min_consistency=min_consistency,
     )
 
+    stability_map = compute_alert_stability()
+
+    enrich_spreads_with_stability(filtered.get("alerts", []), stability_map)
+    enrich_spreads_with_stability(filtered.get("qualified", []), stability_map)
+
     filtered = apply_top_n(filtered, top_n)
 
     filtered["missing_tickers"] = missing_tickers
@@ -649,11 +653,10 @@ def main():
     else:
         filtered["alerts_export_path"] = None
 
+    save_scan(filtered)
+
     total_elapsed = time.time() - overall_start
     progress_print(f"Total execution time: {total_elapsed:.2f}s")
-
-    if ALERTS_ONLY_MODE:
-        filtered = build_alerts_only_output(filtered)
 
     if COMPACT_MODE and not DEBUG_MODE:
         print(build_compact_output(filtered))
@@ -661,6 +664,8 @@ def main():
         print(build_explain_score_output(filtered))
     elif DAILY_SUMMARY_MODE and not DEBUG_MODE:
         print(build_daily_summary_output(filtered))
+    elif ALERTS_ONLY_MODE and not DEBUG_MODE:
+        print(json.dumps(build_alerts_only_output(filtered), indent=2))
     else:
         if DEBUG_MODE:
             output = {
@@ -671,8 +676,6 @@ def main():
             output = filtered
 
         print(json.dumps(output, indent=2))
-    
-    save_scan(filtered)
 
 if __name__ == "__main__":
-    main()  
+    main()
