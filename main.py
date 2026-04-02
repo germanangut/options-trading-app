@@ -14,6 +14,7 @@ from profiles import PROFILES
 from selection import select_leg
 from spreads import build_spread
 from ticker_groups import TICKER_GROUPS
+from history import save_scan, compute_trend_insights
 
 
 DEBUG_MODE = "--debug" in sys.argv
@@ -22,6 +23,45 @@ EXPORT_CSV_MODE = "--export-csv" in sys.argv
 COMPACT_MODE = "--compact" in sys.argv
 EXPLAIN_SCORE_MODE = "--explain-score" in sys.argv
 DAILY_SUMMARY_MODE = "--daily-summary" in sys.argv
+TREND_INSIGHTS_MODE = "--trend-insights" in sys.argv
+
+def build_trend_insights_output():
+    insights = compute_trend_insights()
+
+    lines = []
+    lines.append("TREND INSIGHTS")
+    lines.append("")
+    lines.append(f"Runs analyzed: {insights.get('runs_analyzed', 0)}")
+    lines.append("")
+
+    lines.append("Top Tickers")
+    top_tickers = insights.get("top_tickers", [])
+    if top_tickers:
+        for i, (ticker, count) in enumerate(top_tickers, start=1):
+            lines.append(f"{i}. {ticker} — {count} appearances")
+    else:
+        lines.append("No ticker history yet")
+    lines.append("")
+
+    lines.append("Top Strategies")
+    top_strategies = insights.get("top_strategies", [])
+    if top_strategies:
+        for i, (strategy, count) in enumerate(top_strategies, start=1):
+            lines.append(f"{i}. {strategy} — {count} appearances")
+    else:
+        lines.append("No strategy history yet")
+    lines.append("")
+
+    lines.append("Recurring Alerts")
+    recurring_alerts = insights.get("recurring_alerts", [])
+    if recurring_alerts:
+        for i, (name, count) in enumerate(recurring_alerts, start=1):
+            lines.append(f"{i}. {name} — {count} times")
+    else:
+        lines.append("No recurring alerts yet")
+
+    return "\n".join(lines)
+
 
 
 def progress_print(message):
@@ -419,6 +459,10 @@ def build_daily_summary_output(filtered):
 
 def main():
     config = load_config()
+
+    if TREND_INSIGHTS_MODE:
+        print(build_trend_insights_output())
+        return
 
     cli_tickers_provided = has_cli_flag("--tickers")
     cli_group_provided = has_cli_flag("--group")
