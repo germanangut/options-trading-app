@@ -19,6 +19,9 @@ from ticker_groups import TICKER_GROUPS
 DEBUG_MODE = "--debug" in sys.argv
 ALERTS_ONLY_MODE = "--alerts-only" in sys.argv
 EXPORT_CSV_MODE = "--export-csv" in sys.argv
+COMPACT_MODE = "--compact" in sys.argv
+EXPLAIN_SCORE_MODE = "--explain-score" in sys.argv
+DAILY_SUMMARY_MODE = "--daily-summary" in sys.argv
 
 
 def progress_print(message):
@@ -229,6 +232,190 @@ def build_alerts_only_output(filtered):
         "alerts_export_path": filtered.get("alerts_export_path"),
     }
 
+def format_compact_spread(spread, index=None):
+    if not spread:
+        return ""
+
+    prefix = f"{index}. " if index is not None else ""
+    header = (
+        f"{prefix}{spread.get('ticker')} | {spread.get('strategy_type')} | "
+        f"Adjusted {spread.get('adjusted_score')}"
+    )
+    details = (
+        f"   POP {spread.get('POP')} | ROR {spread.get('ROR')} | "
+        f"DTE {spread.get('DTE')} | Premium {spread.get('volatility_context')}"
+    )
+    summary = f"   {spread.get('decision_summary', '')}"
+    return "\n".join([header, details, summary])
+
+
+def build_compact_output(filtered):
+    lines = []
+
+    summary = filtered.get("summary", {})
+    qualified = filtered.get("qualified", [])
+    top_overall = qualified[0] if qualified else None
+
+    lines.append("SUMMARY")
+    lines.append(f"Qualified: {summary.get('qualified_count', 0)}")
+    lines.append(f"Near Miss: {summary.get('near_miss_count', 0)}")
+
+    if top_overall:
+        lines.append("")
+        lines.append("TOP OVERALL")
+        lines.append(format_compact_spread(top_overall))
+
+    alerts = filtered.get("alerts", [])
+    if alerts:
+        lines.append("")
+        lines.append("ALERTS")
+        for i, spread in enumerate(alerts, start=1):
+            lines.append(format_compact_spread(spread, index=i))
+    else:
+        lines.append("")
+        lines.append("ALERTS")
+        lines.append("No alerts")
+
+    return "\n".join(lines)
+
+def format_explain_score_spread(spread, index=None):
+    if not spread:
+        return ""
+
+    sb = spread.get("score_breakdown", {})
+    penalties = spread.get("penalties", {})
+
+    prefix = f"{index}. " if index is not None else ""
+    lines = [
+        f"{prefix}{spread.get('ticker')} | {spread.get('strategy_type')}",
+        f"Adjusted Score: {spread.get('adjusted_score')}",
+        f"Base Score: {spread.get('score')}",
+        f"Consistency Bonus: {spread.get('consistency_bonus')}",
+        f"Volatility Boost: {spread.get('volatility_boost', 0.0)}",
+        f"Total Penalty: {penalties.get('total_penalty', 0.0)}",
+        "",
+        f"POP Component: {sb.get('pop_component')}",
+        f"ROR Component: {sb.get('ror_component')}",
+        f"Premium/Width: {sb.get('premium_to_width')}",
+        f"Volatility Context: {sb.get('volatility_context')}",
+        "",
+        "Penalties:",
+        f"- Liquidity: {penalties.get('liquidity_penalty', 0.0)}",
+        f"- Width: {penalties.get('width_penalty', 0.0)}",
+        f"- Volatility: {penalties.get('volatility_penalty', 0.0)}",
+        "",
+        f"Decision: {spread.get('decision_summary', '')}",
+    ]
+    return "\n".join(lines)
+
+def build_explain_score_output(filtered):
+    lines = []
+
+    alerts = filtered.get("alerts", [])
+    qualified = filtered.get("qualified", [])
+
+    lines.append("EXPLAIN SCORE")
+
+    if alerts:
+        lines.append("")
+        lines.append("ALERTS")
+        for i, spread in enumerate(alerts, start=1):
+            lines.append(format_explain_score_spread(spread, index=i))
+            lines.append("")
+    else:
+        lines.append("")
+        lines.append("ALERTS")
+        lines.append("No alerts")
+        lines.append("")
+
+    lines.append("TOP QUALIFIED")
+    for i, spread in enumerate(qualified[:3], start=1):
+        lines.append(format_explain_score_spread(spread, index=i))
+        lines.append("")
+
+    return "\n".join(lines).strip()
+
+def format_summary_line(spread, index=None):
+    if not spread:
+        return ""
+
+    prefix = f"{index}. " if index is not None else ""
+    return (
+        f"{prefix}{spread.get('ticker')} | {spread.get('strategy_type')} | "
+        f"Adjusted {spread.get('adjusted_score')}"
+    )
+
+def build_daily_summary_output(filtered):
+    lines = []
+
+    summary = filtered.get("summary", {})
+    alerts = filtered.get("alerts", [])
+    top_overall = summary.get("top_overall")
+    dte_range = filtered.get("dte_range", {})
+    profile = filtered.get("profile")
+    ticker_group = filtered.get("ticker_group")
+    execution_time = filtered.get("execution_time_seconds")
+
+    lines.append("DAILY SUMMARY")
+    lines.append("")
+
+    lines.append("Run Context")
+    lines.append(f"- Profile: {profile}")
+    lines.append(f"- Ticker Group: {ticker_group}")
+    lines.append(
+        f"- DTE Range: {dte_range.get('dte_min')}-{dte_range.get('dte_max')}"
+    )
+    lines.append(f"- Execution Time: {execution_time}s")
+    lines.append("")
+
+    lines.append("Scan Overview")
+    lines.append(f"- Qualified Trades: {summary.get('qualified_count', 0)}")
+    lines.append(f"- Near Misses: {summary.get('near_miss_count', 0)}")
+    lines.append(f"- Alerts: {len(alerts)}")
+    lines.append("")
+
+    if top_overall:
+        lines.append("Top Overall")
+        lines.append(format_compact_spread(top_overall))
+        lines.append("")
+
+    lines.append("Alerts")
+    if alerts:
+        for i, spread in enumerate(alerts, start=1):
+            lines.append(format_summary_line(spread, index=i))
+    else:
+        lines.append("No alerts")
+    lines.append("")
+
+    # Simple narrative takeaway
+    rich_count = sum(
+        1 for spread in alerts if spread.get("volatility_context") == "rich_premium"
+    )
+    balanced_count = sum(
+        1 for spread in alerts if spread.get("volatility_context") == "balanced_premium"
+    )
+
+    if rich_count > 0:
+        takeaway = (
+            f"The strongest current opportunities include {rich_count} rich-premium "
+            f"alert(s), suggesting unusually attractive pricing in this run."
+        )
+    elif balanced_count > 0:
+        takeaway = (
+            "The strongest current opportunities are balanced-premium setups with "
+            "solid POP and manageable friction. No rich-premium setups were identified "
+            "in this run."
+        )
+    else:
+        takeaway = (
+            "No high-priority opportunities were identified in this run. The market may "
+            "not be offering attractive premium conditions right now."
+        )
+
+    lines.append("Takeaway")
+    lines.append(takeaway)
+
+    return "\n".join(lines)
 
 def main():
     config = load_config()
@@ -426,16 +613,23 @@ def main():
     if ALERTS_ONLY_MODE:
         filtered = build_alerts_only_output(filtered)
 
-    if DEBUG_MODE: 
-        output = {
-            "user_view": filtered,
-            "debug_view": results,
-        }
+    if COMPACT_MODE and not DEBUG_MODE:
+        print(build_compact_output(filtered))
+    elif EXPLAIN_SCORE_MODE and not DEBUG_MODE:
+        print(build_explain_score_output(filtered))
+    elif DAILY_SUMMARY_MODE and not DEBUG_MODE:
+        print(build_daily_summary_output(filtered))
     else:
-        output = filtered
+        if DEBUG_MODE:
+            output = {
+                "user_view": filtered,
+                "debug_view": results,
+            }
+        else:
+            output = filtered
 
-    print(json.dumps(output, indent=2))
-
+        print(json.dumps(output, indent=2))
+    
 
 if __name__ == "__main__":
     main()  
