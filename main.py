@@ -1,4 +1,5 @@
 import json
+from logging import config
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -600,10 +601,14 @@ def main():
     min_score = 65 if min_score is None else min_score
     min_consistency = 3 if min_consistency is None else min_consistency
 
-    effective_profile_name = None if cli_scoring_override_provided else profile_name
+    effective_profile_name = profile_name
 
-    dte_min = config.get("dte_min", 30)
-    dte_max = config.get("dte_max", 45)
+    dte_min = get_int_arg("--dte-min", None)
+    dte_max = get_int_arg("--dte-max", None)
+
+    # fallback to config if not provided
+    dte_min = dte_min if dte_min is not None else config.get("dte_min", 30)
+    dte_max = dte_max if dte_max is not None else config.get("dte_max", 45)
 
     overall_start = time.time()
     progress_print(f"Starting scan for {len(tickers)} tickers...")
