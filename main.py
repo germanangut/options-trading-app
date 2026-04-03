@@ -9,7 +9,7 @@ from decisions import classify_spread
 from exporter import export_alerts_to_csv
 from history import save_scan, compute_trend_insights, compute_alert_stability
 from metrics import evaluate_spread
-from output import filter_results
+from output import filter_results, build_summary
 from profiles import PROFILES
 from selection import select_leg
 from spreads import build_spread
@@ -216,6 +216,7 @@ def apply_top_n(filtered, top_n):
 
     return trimmed
 
+
 def build_alerts_only_output(filtered):
     return {
         "summary": filtered.get("summary"),
@@ -293,6 +294,7 @@ def format_explain_score_spread(spread, index=None):
         f"Base Score: {spread.get('score')}",
         f"Consistency Bonus: {spread.get('consistency_bonus')}",
         f"Volatility Boost: {spread.get('volatility_boost', 0.0)}",
+        f"Stability Boost: {spread.get('stability_boost', 0.0)}",
         f"Total Penalty: {penalties.get('total_penalty', 0.0)}",
         "",
         f"POP Component: {sb.get('pop_component')}",
@@ -338,16 +340,26 @@ def build_explain_score_output(filtered):
     return "\n".join(lines).strip()
 
 
+def format_stability_line(spread):
+    if not spread:
+        return "None"
+
+    return (
+        f"{spread.get('ticker')} | {spread.get('strategy_type')} | "
+        f"{spread.get('stability_level')} ({spread.get('stability_count')})"
+    )
+
 def format_summary_line(spread, index=None):
     if not spread:
         return ""
 
     prefix = f"{index}. " if index is not None else ""
+
     return (
-        f"{prefix}{spread.get('ticker')} | {spread.get('strategy_type')} | "
+        f"{prefix}{spread.get('ticker')} | "
+        f"{spread.get('strategy_type')} | "
         f"Adjusted {spread.get('adjusted_score')}"
     )
-
 
 def build_daily_summary_output(filtered):
     lines = []
@@ -360,6 +372,17 @@ def build_daily_summary_output(filtered):
     profile = filtered.get("profile")
     ticker_group = filtered.get("ticker_group")
     execution_time = filtered.get("execution_time_seconds")
+
+    stable_alerts = [s for s in alerts if s.get("stability_level") == "stable"]
+    emerging_alerts = [s for s in alerts if s.get("stability_level") == "emerging"]
+    new_alerts = [s for s in alerts if s.get("stability_level") == "new"]
+
+    most_stable_alert = None
+    if alerts:
+        most_stable_alert = max(
+            alerts,
+            key=lambda s: s.get("stability_count", 0)
+        )
 
     lines.append("DAILY SUMMARY")
     lines.append("")
@@ -388,6 +411,17 @@ def build_daily_summary_output(filtered):
             lines.append(format_summary_line(spread, index=i))
     else:
         lines.append("No alerts")
+    lines.append("")
+
+    lines.append("Stability Snapshot")
+    lines.append(f"- Stable Alerts: {len(stable_alerts)}")
+    lines.append(f"- Emerging Alerts: {len(emerging_alerts)}")
+    lines.append(f"- New Alerts: {len(new_alerts)}")
+
+    if most_stable_alert:
+        lines.append(f"- Most Stable Alert: {format_stability_line(most_stable_alert)}")
+    else:
+        lines.append("- Most Stable Alert: None")
     lines.append("")
 
     rich_count = sum(
@@ -467,6 +501,27 @@ def enrich_spreads_with_stability(spreads, stability_map):
         )
         spread["stability_count"] = stability_info["count"]
         spread["stability_level"] = stability_info["stability"]
+
+
+def compute_stability_boost(stability_level):
+    if stability_level == "stable":
+        return 1.0
+    if stability_level == "emerging":
+        return 0.5
+    return 0.0
+
+
+def apply_stability_boost(spreads):
+    for spread in spreads:
+        stability_level = spread.get("stability_level", "new")
+        stability_boost = compute_stability_boost(stability_level)
+
+        spread["stability_boost"] = round(stability_boost, 2)
+        spread["adjusted_score"] = round(spread.get("adjusted_score", 0) + stability_boost, 2)
+
+        if "score_breakdown" in spread:
+            spread["score_breakdown"]["stability_boost"] = round(stability_boost, 2)
+            spread["score_breakdown"]["adjusted_score"] = spread["adjusted_score"]
 
 
 def main():
@@ -618,9 +673,23 @@ def main():
     )
 
     stability_map = compute_alert_stability()
-
-    enrich_spreads_with_stability(filtered.get("alerts", []), stability_map)
+   
     enrich_spreads_with_stability(filtered.get("qualified", []), stability_map)
+    apply_stability_boost(filtered.get("qualified", []))
+
+    filtered["alerts"].sort(
+        key=lambda s: s.get("adjusted_score", 0),
+        reverse=True,
+    )
+    filtered["qualified"].sort(
+        key=lambda s: s.get("adjusted_score", 0),
+        reverse=True,
+    )
+
+    filtered["summary"] = build_summary(
+        filtered.get("qualified", []),
+        filtered.get("near_miss", []),
+    )
 
     filtered = apply_top_n(filtered, top_n)
 
@@ -676,6 +745,7 @@ def main():
             output = filtered
 
         print(json.dumps(output, indent=2))
+
 
 if __name__ == "__main__":
     main()
