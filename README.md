@@ -1,6 +1,6 @@
 # Options Trading App
 
-A Python-based options scanning dashboard for directional credit spread strategies. The app evaluates bull put spreads and bear call spreads across configured ticker groups, ranks opportunities using probability-of-profit (POP) and return-on-risk (ROR), and generates alerts with historical stability insights.
+A modular Python-based options scanning dashboard for directional credit spread strategies. The app evaluates bull put spreads and bear call spreads across configured ticker groups, ranks opportunities using probability-of-profit (POP) and return-on-risk (ROR), and generates alerts with historical stability insights.
 
 ## What it does
 
@@ -14,7 +14,8 @@ A Python-based options scanning dashboard for directional credit spread strategi
 
 ## Key features
 
-- `main.py` is the core scanner and reporting engine.
+- `main.py` is the CLI entry point that parses arguments and orchestrates scanning.
+- `engine.py` is the core scanning engine containing all business logic.
 - `app.py` provides a Streamlit UI for interactive scanning.
 - Configurable profiles: `conservative`, `balanced`, and `aggressive`.
 - Built-in ticker groups such as `tech`, `index`, and `mixed`.
@@ -22,20 +23,20 @@ A Python-based options scanning dashboard for directional credit spread strategi
 - Alerts export to CSV via `--export-csv`.
 - Compact output, explain-score output, daily summary, and alerts-only JSON modes.
 
-## Project structure
+## Architecture
 
-- `main.py` — CLI entry point and workflow orchestration.
-- `app.py` — Streamlit dashboard wrapper for easy scanning.
-- `config.yaml` — default profile, ticker group, and scoring settings.
-- `data_provider.py` — market data retrieval, Alpaca integration, caching, and mock fallback.
-- `metrics.py` — POP/ROR score computation and volatility classification.
-- `spreads.py` — credit spread construction and risk calculation.
-- `selection.py` — option leg selection logic by target delta.
-- `decisions.py` — spread qualification, rejection, bonuses, and penalties.
-- `output.py` — result filtering, summary building, and output formatting.
-- `history.py` — run persistence, trend insights, and stability scoring.
-- `profiles.py` — predefined scoring profiles.
-- `ticker_groups.py` — predefined ticker groups.
+The application follows a clean separation of concerns:
+
+- **CLI Layer** (`main.py`): Thin wrapper that parses command-line arguments, calls the scanning engine, and formats output based on requested mode.
+- **Business Logic Layer** (`engine.py`): Core scanning engine containing all market data processing, spread evaluation, filtering, and result enrichment logic.
+- **Presentation Layer** (`app.py`, `ui/`): Streamlit-based web interface for interactive scanning and visualization.
+- **Supporting Modules**: Data access, configuration, metrics calculation, and persistence utilities.
+
+This modular design enables:
+- Easy testing of business logic in isolation
+- Multiple entry points (CLI, web UI, API)
+- Clear separation between interface and implementation
+- Maintainable and extensible codebase
 
 ## Installation
 
