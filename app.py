@@ -176,7 +176,7 @@ def render_daily_summary(output):
     summary = output.get("summary", {})
     alerts = output.get("alerts", [])
     qualified = output.get("qualified", [])
-    top_overall = qualified[0] if qualified else summary.get("top_overall")
+    top_overall = summary.get("top_overall") or (qualified[0] if qualified else None)
     dte_range = output.get("dte_range", {})
     profile = output.get("profile")
     ticker_group = output.get("ticker_group")
@@ -262,9 +262,26 @@ def render_qualified_list(qualified):
     st.subheader("Qualified Trades")
 
     if not qualified:
-        st.info("No qualified trades available.")
+        st.warning("No qualified trades matched the current settings.")
+        st.caption("Try adjusting profile, DTE range, minimum score, or consistency threshold.")
         return
 
+    # Qualified Summary section
+    with st.container(border=True):
+        st.markdown("### Qualified Summary")
+        
+        total_trades = len(qualified)
+        stable_count = sum(1 for s in qualified if s.get("stability_level") == "stable")
+        avg_score = sum(s.get("adjusted_score", 0) for s in qualified) / total_trades if total_trades > 0 else 0
+        top_ticker = qualified[0].get("ticker") if qualified else "N/A"
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Total Qualified", total_trades)
+        col2.metric("Stable Trades", stable_count)
+        col3.metric("Avg Score", f"{avg_score:.1f}")
+        col4.metric("Top Ticker", top_ticker)
+
+    # Trade cards (respecting engine sort order)
     for i, spread in enumerate(qualified, start=1):
         with st.container(border=True):
             st.markdown(
@@ -273,17 +290,34 @@ def render_qualified_list(qualified):
 
             render_metric_row(spread)
 
-            st.markdown(
-                f"**Premium Context:** {spread.get('volatility_context')}"
-            )
+            col1, col2 = st.columns(2)
+            with col1:
+                st.markdown(
+                    f"**Strikes:** {spread.get('short_strike')} / {spread.get('long_strike')}"
+                )
+            with col2:
+                if spread.get("expiration_date"):
+                    st.markdown(f"**Expiration:** {spread.get('expiration_date')}")
+
+            col3, col4 = st.columns(2)
+            with col3:
+                if spread.get("net_credit"):
+                    st.markdown(f"**Net Credit:** {spread.get('net_credit')}")
+            with col4:
+                st.markdown(
+                    f"**Premium Context:** {spread.get('volatility_context')}"
+                )
 
             st.markdown(
                 f"**Stability:** {spread.get('stability_level', 'n/a')} "
                 f"({spread.get('stability_count', 0)})"
             )
 
+            if spread.get("status_reason"):
+                st.markdown(f"**Status:** {spread.get('status_reason')}")
+
             st.markdown(
-                f"**Decision Summary:** {spread.get('decision_summary', 'No summary available.')}"
+                f"**Decision:** {spread.get('decision_summary', 'No summary available.')}"
             )
 
             with st.expander("More details"):
@@ -307,12 +341,12 @@ if run_button:
     summary = output.get("summary", {})
     alerts = output.get("alerts", [])
     qualified = output.get("qualified", [])
-    top_overall = qualified[0] if qualified else summary.get("top_overall")
+    top_overall = summary.get("top_overall") or (qualified[0] if qualified else None)
 
     st.success("Scan completed successfully.")
 
     tab_overview, tab_alerts, tab_qualified, tab_history, tab_summary, tab_raw = st.tabs(
-            ["Overview", "Alerts", "Qualified", "History", "Daily Summary", "Raw Output"]
+            ["Overview", "Alerts", "Qualified Trades", "History", "Daily Summary", "Raw Output"]
         )
 
     with tab_overview:
