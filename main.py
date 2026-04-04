@@ -1,19 +1,14 @@
+"""CLI entry point for options trading scanner."""
+
 import json
-from logging import config
 import sys
-import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from pathlib import Path
 
 from config_loader import load_config
-from data_provider import get_market_data, is_cached_market_data_available
-from decisions import classify_spread
-from exporter import export_alerts_to_csv
-from history import save_scan, compute_trend_insights, compute_alert_stability
-from metrics import evaluate_spread
-from output import filter_results, build_summary
+from engine import run_scan_engine
+from history import compute_trend_insights
+from output import build_summary
 from profiles import PROFILES
-from selection import select_leg
-from spreads import build_spread
 from ticker_groups import TICKER_GROUPS
 
 
@@ -26,39 +21,13 @@ DAILY_SUMMARY_MODE = "--daily-summary" in sys.argv
 TREND_INSIGHTS_MODE = "--trend-insights" in sys.argv
 
 
-def progress_print(message):
-    print(message, file=sys.stderr, flush=True)
-
-
 def has_cli_flag(flag_name):
+    """Check if a CLI flag is present."""
     return flag_name in sys.argv
 
 
-def has_any_scoring_override():
-    scoring_flags = [
-        "--pop-weight",
-        "--ror-weight",
-        "--min-score",
-        "--min-consistency",
-    ]
-    return any(flag in sys.argv for flag in scoring_flags)
-
-
-def get_top_n_arg():
-    if "--top" not in sys.argv:
-        return None
-
-    try:
-        idx = sys.argv.index("--top")
-        value = int(sys.argv[idx + 1])
-        if value <= 0:
-            return None
-        return value
-    except (IndexError, ValueError):
-        return None
-
-
 def get_tickers_arg(default_tickers):
+    """Get tickers from --tickers CLI argument."""
     if "--tickers" not in sys.argv:
         return default_tickers
 
@@ -72,6 +41,7 @@ def get_tickers_arg(default_tickers):
 
 
 def get_group_arg():
+    """Get ticker group from --group CLI argument."""
     if "--group" not in sys.argv:
         return None
 
@@ -84,6 +54,7 @@ def get_group_arg():
 
 
 def get_profile_arg():
+    """Get profile from --profile CLI argument."""
     if "--profile" not in sys.argv:
         return None
 
@@ -96,6 +67,7 @@ def get_profile_arg():
 
 
 def get_float_arg(flag_name, default_value=None):
+    """Get float value from CLI argument."""
     if flag_name not in sys.argv:
         return default_value
 
@@ -110,6 +82,7 @@ def get_float_arg(flag_name, default_value=None):
 
 
 def get_int_arg(flag_name, default_value=None):
+    """Get int value from CLI argument."""
     if flag_name not in sys.argv:
         return default_value
 
@@ -123,102 +96,41 @@ def get_int_arg(flag_name, default_value=None):
         return default_value
 
 
-def process_ticker(ticker, ticker_data, pop_weight, ror_weight):
-    contracts = ticker_data["contracts"]
-    underlying_price = ticker_data["underlying_price"]
-    expiration_date = ticker_data["expiration_date"]
-    dte = ticker_data["DTE"]
-    provider_diagnostics = ticker_data.get("provider_diagnostics", {})
+def parse_arguments():
+    """Parse CLI arguments and return configuration dict."""
+    config = load_config()
 
-    if not contracts:
-        return {
-            "ticker": ticker,
-            "bull_put_spread": None,
-            "bear_call_spread": None,
-            "bull_put_available": False,
-            "bear_call_available": False,
-            "selected_legs": {
-                "short_put": None,
-                "long_put": None,
-                "short_call": None,
-                "long_call": None,
-            },
-            "provider_diagnostics": provider_diagnostics,
-        }
+    # Get basic parameters
+    profile_name = get_profile_arg() or config.get("profile", "balanced")
+    group_name = get_group_arg() or config.get("ticker_group", "tech")
+    tickers = get_tickers_arg(None)  # None means use group/default
 
-    short_put = select_leg(contracts, target_delta=-0.30, option_type="put")
-    long_put = select_leg(contracts, target_delta=-0.20, option_type="put")
-    short_call = select_leg(contracts, target_delta=0.30, option_type="call")
-    long_call = select_leg(contracts, target_delta=0.20, option_type="call")
+    # Get scoring parameters
+    pop_weight = get_float_arg("--pop-weight")
+    ror_weight = get_float_arg("--ror-weight")
+    min_score = get_int_arg("--min-score")
+    min_consistency = get_int_arg("--min-consistency")
 
-    bull_put_spread = build_spread(
-        short_leg=short_put,
-        long_leg=long_put,
-        strategy_type="bull put spread",
-        ticker=ticker,
-        underlying_price=underlying_price,
-        expiration_date=expiration_date,
-        dte=dte,
-    )
-
-    bear_call_spread = build_spread(
-        short_leg=short_call,
-        long_leg=long_call,
-        strategy_type="bear call spread",
-        ticker=ticker,
-        underlying_price=underlying_price,
-        expiration_date=expiration_date,
-        dte=dte,
-    )
-
-    bull_put_spread = classify_spread(
-        evaluate_spread(
-            bull_put_spread,
-            pop_weight=pop_weight,
-            ror_weight=ror_weight,
-        )
-    )
-    bear_call_spread = classify_spread(
-        evaluate_spread(
-            bear_call_spread,
-            pop_weight=pop_weight,
-            ror_weight=ror_weight,
-        )
-    )
+    # Get DTE parameters
+    dte_min = get_int_arg("--dte-min") or config.get("dte_min", 20)
+    dte_max = get_int_arg("--dte-max") or config.get("dte_max", 35)
 
     return {
-        "ticker": ticker,
-        "bull_put_spread": bull_put_spread,
-        "bear_call_spread": bear_call_spread,
-        "bull_put_available": bull_put_spread is not None,
-        "bear_call_available": bear_call_spread is not None,
-        "selected_legs": {
-            "short_put": short_put,
-            "long_put": long_put,
-            "short_call": short_call,
-            "long_call": long_call,
-        },
-        "provider_diagnostics": provider_diagnostics,
+        "profile_name": profile_name,
+        "group_name": group_name,
+        "tickers": tickers,
+        "dte_min": dte_min,
+        "dte_max": dte_max,
+        "min_score": min_score,
+        "min_consistency": min_consistency,
+        "pop_weight": pop_weight,
+        "ror_weight": ror_weight,
+        "export_csv": EXPORT_CSV_MODE,
     }
 
 
-def apply_top_n(filtered, top_n):
-    if top_n is None:
-        return filtered
-
-    trimmed = dict(filtered)
-    trimmed["qualified"] = filtered.get("qualified", [])[:top_n]
-    trimmed["near_miss"] = filtered.get("near_miss", [])[:top_n]
-    trimmed["alerts"] = filtered.get("alerts", [])[:top_n]
-
-    summary = dict(trimmed.get("summary", {}))
-    summary["top_n_applied"] = top_n
-    trimmed["summary"] = summary
-
-    return trimmed
-
-
 def build_alerts_only_output(filtered):
+    """Build alerts-only output format."""
     return {
         "summary": filtered.get("summary"),
         "alerts": filtered.get("alerts", []),
@@ -236,6 +148,7 @@ def build_alerts_only_output(filtered):
 
 
 def format_compact_spread(spread, index=None):
+    """Format a spread for compact output."""
     if not spread:
         return ""
 
@@ -253,6 +166,7 @@ def format_compact_spread(spread, index=None):
 
 
 def build_compact_output(filtered):
+    """Build compact output format."""
     lines = []
 
     summary = filtered.get("summary", {})
@@ -282,6 +196,7 @@ def build_compact_output(filtered):
 
 
 def format_explain_score_spread(spread, index=None):
+    """Format a spread for explain-score output."""
     if not spread:
         return ""
 
@@ -314,6 +229,7 @@ def format_explain_score_spread(spread, index=None):
 
 
 def build_explain_score_output(filtered):
+    """Build explain-score output format."""
     lines = []
 
     alerts = filtered.get("alerts", [])
@@ -342,6 +258,7 @@ def build_explain_score_output(filtered):
 
 
 def format_stability_line(spread):
+    """Format stability information for a spread."""
     if not spread:
         return "None"
 
@@ -350,7 +267,9 @@ def format_stability_line(spread):
         f"{spread.get('stability_level')} ({spread.get('stability_count')})"
     )
 
+
 def format_summary_line(spread, index=None):
+    """Format summary line for a spread."""
     if not spread:
         return ""
 
@@ -362,13 +281,15 @@ def format_summary_line(spread, index=None):
         f"Adjusted {spread.get('adjusted_score')}"
     )
 
+
 def build_daily_summary_output(filtered):
+    """Build daily summary output format."""
     lines = []
 
     summary = filtered.get("summary", {})
     alerts = filtered.get("alerts", [])
     qualified = filtered.get("qualified", [])
-    top_overall = qualified[0] if qualified else None
+    top_overall = qualified[0] if qualified else summary.get("top_overall")
     dte_range = filtered.get("dte_range", {})
     profile = filtered.get("profile")
     ticker_group = filtered.get("ticker_group")
@@ -456,6 +377,7 @@ def build_daily_summary_output(filtered):
 
 
 def build_trend_insights_output():
+    """Build trend insights output format."""
     insights = compute_trend_insights()
 
     lines = []
@@ -493,261 +415,35 @@ def build_trend_insights_output():
     return "\n".join(lines)
 
 
-def enrich_spreads_with_stability(spreads, stability_map):
-    for spread in spreads:
-        key = f"{spread.get('ticker')}|{spread.get('strategy_type')}"
-        stability_info = stability_map.get(
-            key,
-            {"count": 0, "stability": "new"}
-        )
-        spread["stability_count"] = stability_info["count"]
-        spread["stability_level"] = stability_info["stability"]
-
-
-def compute_stability_boost(stability_level):
-    if stability_level == "stable":
-        return 1.0
-    if stability_level == "emerging":
-        return 0.5
-    return 0.0
-
-
-def apply_stability_boost(spreads):
-    for spread in spreads:
-        stability_level = spread.get("stability_level", "new")
-        stability_boost = compute_stability_boost(stability_level)
-
-        spread["stability_boost"] = round(stability_boost, 2)
-        spread["adjusted_score"] = round(spread.get("adjusted_score", 0) + stability_boost, 2)
-
-        if "score_breakdown" in spread:
-            spread["score_breakdown"]["stability_boost"] = round(stability_boost, 2)
-            spread["score_breakdown"]["adjusted_score"] = spread["adjusted_score"]
-
-
 def main():
+    """Main CLI entry point."""
+    # Handle special modes
     if TREND_INSIGHTS_MODE:
         print(build_trend_insights_output())
         return
 
-    config = load_config()
+    # Parse arguments
+    args = parse_arguments()
 
-    cli_tickers_provided = has_cli_flag("--tickers")
-    cli_group_provided = has_cli_flag("--group")
-    cli_profile_provided = has_cli_flag("--profile")
-    cli_scoring_override_provided = has_any_scoring_override()
+    # Run scan engine
+    result = run_scan_engine(**args)
 
-    default_tickers = ["TSLA", "META", "NVDA"]
-    top_n = get_top_n_arg()
-
-    profile_name = get_profile_arg() or config.get("profile")
-    profile_config = PROFILES.get(profile_name) if profile_name else None
-
-    config_group_name = config.get("ticker_group")
-    group_name = None
-
-    if cli_tickers_provided:
-        tickers = get_tickers_arg(default_tickers)
-    elif cli_group_provided:
-        group_name = get_group_arg()
-        tickers = TICKER_GROUPS[group_name] if group_name else default_tickers
-    elif config_group_name and config_group_name in TICKER_GROUPS:
-        group_name = config_group_name
-        tickers = TICKER_GROUPS[group_name]
-    else:
-        tickers = default_tickers
-
-    pop_weight = get_float_arg("--pop-weight", None)
-    ror_weight = get_float_arg("--ror-weight", None)
-    min_score = get_int_arg("--min-score", None)
-    min_consistency = get_int_arg("--min-consistency", None)
-
-    if cli_profile_provided and profile_config:
-        pop_weight = pop_weight if pop_weight is not None else profile_config["pop_weight"]
-        ror_weight = ror_weight if ror_weight is not None else profile_config["ror_weight"]
-        min_score = min_score if min_score is not None else profile_config["min_score"]
-        min_consistency = (
-            min_consistency
-            if min_consistency is not None
-            else profile_config["min_consistency"]
-        )
-
-        pop_weight = pop_weight if pop_weight is not None else config.get("pop_weight")
-        ror_weight = ror_weight if ror_weight is not None else config.get("ror_weight")
-        min_score = min_score if min_score is not None else config.get("min_score")
-        min_consistency = (
-            min_consistency if min_consistency is not None else config.get("min_consistency")
-        )
-    else:
-        pop_weight = pop_weight if pop_weight is not None else config.get("pop_weight")
-        ror_weight = ror_weight if ror_weight is not None else config.get("ror_weight")
-        min_score = min_score if min_score is not None else config.get("min_score")
-        min_consistency = (
-            min_consistency if min_consistency is not None else config.get("min_consistency")
-        )
-
-        if profile_config:
-            pop_weight = pop_weight if pop_weight is not None else profile_config["pop_weight"]
-            ror_weight = ror_weight if ror_weight is not None else profile_config["ror_weight"]
-            min_score = min_score if min_score is not None else profile_config["min_score"]
-            min_consistency = (
-                min_consistency
-                if min_consistency is not None
-                else profile_config["min_consistency"]
-            )
-
-    pop_weight = 0.6 if pop_weight is None else pop_weight
-    ror_weight = 0.4 if ror_weight is None else ror_weight
-    min_score = 65 if min_score is None else min_score
-    min_consistency = 3 if min_consistency is None else min_consistency
-
-    effective_profile_name = profile_name
-
-    dte_min = get_int_arg("--dte-min", None)
-    dte_max = get_int_arg("--dte-max", None)
-
-    # fallback to config if not provided
-    dte_min = dte_min if dte_min is not None else config.get("dte_min", 30)
-    dte_max = dte_max if dte_max is not None else config.get("dte_max", 45)
-
-    overall_start = time.time()
-    progress_print(f"Starting scan for {len(tickers)} tickers...")
-
-    if effective_profile_name:
-        progress_print(f"Using profile: {effective_profile_name}")
-
-    if group_name:
-        progress_print(f"Using ticker group: {group_name}")
-
-    progress_print(f"Scoring weights -> POP: {pop_weight}, ROR: {ror_weight}")
-    progress_print(f"Alert thresholds -> Score: {min_score}, Consistency: {min_consistency}")
-    progress_print(f"DTE range -> Min: {dte_min}, Max: {dte_max}")
-
-    if is_cached_market_data_available(tickers, dte_min=dte_min, dte_max=dte_max):
-        progress_print("Using cached market data...")
-    else:
-        progress_print("Fetching fresh market data...")
-
-    provider_start = time.time()
-    provider_result = get_market_data(
-        tickers,
-        dte_min=dte_min,
-        dte_max=dte_max,
-    )
-    provider_elapsed = time.time() - provider_start
-    progress_print(f"Market data retrieval completed in {provider_elapsed:.2f}s")
-
-    data = provider_result["market_data"]
-    missing_tickers = provider_result["missing_tickers"]
-    provider_name = provider_result["provider"]
-    provider_errors = provider_result.get("provider_errors", [])
-
-    results = []
-    available_tickers = list(data.keys())
-    max_workers = min(5, len(available_tickers)) if available_tickers else 1
-
-    progress_print(f"Running with {max_workers} parallel workers...")
-
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {}
-
-        for ticker in available_tickers:
-            progress_print(f"[SUBMITTED] {ticker}")
-            future = executor.submit(
-                process_ticker,
-                ticker,
-                data[ticker],
-                pop_weight,
-                ror_weight,
-            )
-            futures[future] = ticker
-
-        for future in as_completed(futures):
-            ticker = futures[future]
-            try:
-                result = future.result()
-                results.append(result)
-                progress_print(f"[DONE] {ticker}")
-            except Exception as e:
-                progress_print(f"[ERROR] {ticker}: {str(e)}")
-
-    filtered = filter_results(
-        results,
-        min_score=min_score,
-        min_consistency=min_consistency,
-    )
-
-    stability_map = compute_alert_stability()
-   
-    enrich_spreads_with_stability(filtered.get("qualified", []), stability_map)
-    apply_stability_boost(filtered.get("qualified", []))
-
-    filtered["alerts"].sort(
-        key=lambda s: s.get("adjusted_score", 0),
-        reverse=True,
-    )
-    filtered["qualified"].sort(
-        key=lambda s: s.get("adjusted_score", 0),
-        reverse=True,
-    )
-
-    filtered["summary"] = build_summary(
-        filtered.get("qualified", []),
-        filtered.get("near_miss", []),
-    )
-
-    filtered = apply_top_n(filtered, top_n)
-
-    filtered["missing_tickers"] = missing_tickers
-    filtered["provider"] = provider_name
-    filtered["provider_errors"] = provider_errors
-    filtered["execution_time_seconds"] = round(time.time() - overall_start, 2)
-    filtered["profile"] = effective_profile_name
-    filtered["ticker_group"] = group_name
-
-    filtered["scoring_weights"] = {
-        "pop_weight": pop_weight,
-        "ror_weight": ror_weight,
-    }
-
-    filtered["alert_thresholds"] = {
-        "min_score": min_score,
-        "min_consistency": min_consistency,
-    }
-
-    filtered["dte_range"] = {
-        "dte_min": dte_min,
-        "dte_max": dte_max,
-    }
-
-    if EXPORT_CSV_MODE:
-        exported_alerts_path = export_alerts_to_csv(filtered.get("alerts", []))
-        filtered["alerts_export_path"] = exported_alerts_path
-        progress_print(f"Alerts exported to {exported_alerts_path}")
-    else:
-        filtered["alerts_export_path"] = None
-
-    save_scan(filtered)
-
-    total_elapsed = time.time() - overall_start
-    progress_print(f"Total execution time: {total_elapsed:.2f}s")
-
+    # Output based on mode
     if COMPACT_MODE and not DEBUG_MODE:
-        print(build_compact_output(filtered))
+        print(build_compact_output(result))
     elif EXPLAIN_SCORE_MODE and not DEBUG_MODE:
-        print(build_explain_score_output(filtered))
+        print(build_explain_score_output(result))
     elif DAILY_SUMMARY_MODE and not DEBUG_MODE:
-        print(build_daily_summary_output(filtered))
+        print(build_daily_summary_output(result))
     elif ALERTS_ONLY_MODE and not DEBUG_MODE:
-        print(json.dumps(build_alerts_only_output(filtered), indent=2))
+        print(json.dumps(build_alerts_only_output(result), indent=2))
     else:
         if DEBUG_MODE:
-            output = {
-                "user_view": filtered,
-                "debug_view": results,
-            }
+            # In debug mode, we don't have the raw results anymore
+            # since they're processed in the engine
+            output = result
         else:
-            output = filtered
+            output = result
 
         print(json.dumps(output, indent=2))
 

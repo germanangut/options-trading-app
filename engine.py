@@ -119,26 +119,34 @@ def apply_stability_boost(spreads):
 def run_scan_engine(
     profile_name="balanced",
     group_name="tech",
+    tickers=None,
     dte_min=20,
     dte_max=35,
     min_score=65,
     min_consistency=3,
+    pop_weight=None,
+    ror_weight=None,
     export_csv=False,
 ):
     config = load_config()
 
     profile_config = PROFILES.get(profile_name) if profile_name else None
-    tickers = TICKER_GROUPS.get(group_name, ["TSLA", "META", "NVDA"])
-
-    pop_weight = config.get("pop_weight")
-    ror_weight = config.get("ror_weight")
-
-    if profile_config:
-        pop_weight = profile_config["pop_weight"] if pop_weight is None else pop_weight
-        ror_weight = profile_config["ror_weight"] if ror_weight is None else ror_weight
-
-    pop_weight = 0.6 if pop_weight is None else pop_weight
-    ror_weight = 0.4 if ror_weight is None else ror_weight
+    
+    # Use provided tickers, or fall back to group, or default
+    if tickers is None:
+        tickers = TICKER_GROUPS.get(group_name, ["TSLA", "META", "NVDA"])
+    
+    # Get scoring weights from profile/config/params
+    if pop_weight is None:
+        pop_weight = profile_config["pop_weight"] if profile_config else config.get("pop_weight", 0.6)
+    if ror_weight is None:
+        ror_weight = profile_config["ror_weight"] if profile_config else config.get("ror_weight", 0.4)
+    
+    # Set defaults for min_score and min_consistency if None
+    if min_score is None:
+        min_score = profile_config["min_score"] if profile_config else config.get("min_score", 65)
+    if min_consistency is None:
+        min_consistency = profile_config["min_consistency"] if profile_config else config.get("min_consistency", 3)
 
     overall_start = time.time()
 

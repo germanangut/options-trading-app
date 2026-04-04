@@ -2,6 +2,15 @@
 from pathlib import Path
 from engine import run_scan_engine
 from history import compute_trend_insights
+from ui.components import (
+    render_metric_row,
+    render_trade_header,
+    render_stability_block,
+    render_decision_summary,
+    render_json_expander,
+)
+from ui.qualified import render_qualified_trades
+from ui.alerts import render_alerts
 import streamlit as st
 
 
@@ -75,14 +84,6 @@ def run_scan(profile, ticker_group, dte_min, dte_max, min_score, min_consistency
     )
 
 
-def render_metric_row(spread):
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric("Adjusted Score", spread.get("adjusted_score"))
-    col2.metric("POP", spread.get("POP"))
-    col3.metric("ROR", spread.get("ROR"))
-    col4.metric("DTE", spread.get("DTE"))
-
-
 def render_trade_card(title, spread):
     if not spread:
         st.info(f"No {title.lower()} available.")
@@ -99,42 +100,9 @@ def render_trade_card(title, spread):
         st.markdown(
             f"**Strikes:** {spread.get('short_strike')} / {spread.get('long_strike')}"
         )
-        st.markdown(
-            f"**Stability:** {spread.get('stability_level', 'n/a')} "
-            f"({spread.get('stability_count', 0)})"
-        )
-        st.markdown(
-            f"**Decision Summary:** {spread.get('decision_summary', 'No summary available.')}"
-        )
+        render_stability_block(spread)
+        render_decision_summary(spread)
 
-
-def render_alert_list(alerts):
-    st.subheader("Alerts")
-
-    if not alerts:
-        st.info("No alerts returned.")
-        return
-
-    for i, alert in enumerate(alerts, start=1):
-        with st.container(border=True):
-            st.markdown(
-                f"### {i}. {alert.get('ticker')} | {alert.get('strategy_type')}"
-            )
-            render_metric_row(alert)
-
-            st.markdown(
-                f"**Premium Context:** {alert.get('volatility_context')}"
-            )
-            st.markdown(
-                f"**Stability:** {alert.get('stability_level', 'n/a')} "
-                f"({alert.get('stability_count', 0)})"
-            )
-            st.markdown(
-                f"**Decision Summary:** {alert.get('decision_summary', 'No summary available.')}"
-            )
-
-            with st.expander("More details"):
-                st.json(alert)
 
 def render_trend_insights():
     insights = compute_trend_insights()
@@ -258,71 +226,6 @@ def render_daily_summary(output):
         st.markdown("### Takeaway")
         st.write(takeaway)
 
-def render_qualified_list(qualified):
-    st.subheader("Qualified Trades")
-
-    if not qualified:
-        st.warning("No qualified trades matched the current settings.")
-        st.caption("Try adjusting profile, DTE range, minimum score, or consistency threshold.")
-        return
-
-    # Qualified Summary section
-    with st.container(border=True):
-        st.markdown("### Qualified Summary")
-        
-        total_trades = len(qualified)
-        stable_count = sum(1 for s in qualified if s.get("stability_level") == "stable")
-        avg_score = sum(s.get("adjusted_score", 0) for s in qualified) / total_trades if total_trades > 0 else 0
-        top_ticker = qualified[0].get("ticker") if qualified else "N/A"
-        
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Qualified", total_trades)
-        col2.metric("Stable Trades", stable_count)
-        col3.metric("Avg Score", f"{avg_score:.1f}")
-        col4.metric("Top Ticker", top_ticker)
-
-    # Trade cards (respecting engine sort order)
-    for i, spread in enumerate(qualified, start=1):
-        with st.container(border=True):
-            st.markdown(
-                f"### {i}. {spread.get('ticker')} | {spread.get('strategy_type')}"
-            )
-
-            render_metric_row(spread)
-
-            col1, col2 = st.columns(2)
-            with col1:
-                st.markdown(
-                    f"**Strikes:** {spread.get('short_strike')} / {spread.get('long_strike')}"
-                )
-            with col2:
-                if spread.get("expiration_date"):
-                    st.markdown(f"**Expiration:** {spread.get('expiration_date')}")
-
-            col3, col4 = st.columns(2)
-            with col3:
-                if spread.get("net_credit"):
-                    st.markdown(f"**Net Credit:** {spread.get('net_credit')}")
-            with col4:
-                st.markdown(
-                    f"**Premium Context:** {spread.get('volatility_context')}"
-                )
-
-            st.markdown(
-                f"**Stability:** {spread.get('stability_level', 'n/a')} "
-                f"({spread.get('stability_count', 0)})"
-            )
-
-            if spread.get("status_reason"):
-                st.markdown(f"**Status:** {spread.get('status_reason')}")
-
-            st.markdown(
-                f"**Decision:** {spread.get('decision_summary', 'No summary available.')}"
-            )
-
-            with st.expander("More details"):
-                st.json(spread)
-
 
 if run_button:
     with st.spinner("Running scan..."):
@@ -371,10 +274,10 @@ if run_button:
         render_trade_card("Top Overall", top_overall)
 
     with tab_alerts:
-        render_alert_list(alerts)
+        render_alerts(alerts)
 
     with tab_qualified:
-        render_qualified_list(qualified)
+        render_qualified_trades(qualified)
 
     with tab_history:
         render_trend_insights()
