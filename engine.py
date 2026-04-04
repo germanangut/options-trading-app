@@ -1,0 +1,229 @@
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from config_loader import load_config
+from data_provider import get_market_data, is_cached_market_data_available
+from decisions import classify_spread
+from exporter import export_alerts_to_csv
+from history import save_scan, compute_alert_stability
+from metrics import evaluate_spread
+from output import filter_results, build_summary
+from profiles import PROFILES
+from selection import select_leg
+from spreads import build_spread
+from ticker_groups import TICKER_GROUPS
+
+
+def process_ticker(ticker, ticker_data, pop_weight, ror_weight):
+    contracts = ticker_data["contracts"]
+    underlying_price = ticker_data["underlying_price"]
+    expiration_date = ticker_data["expiration_date"]
+    dte = ticker_data["DTE"]
+    provider_diagnostics = ticker_data.get("provider_diagnostics", {})
+
+    if not contracts:
+        return {
+            "ticker": ticker,
+            "bull_put_spread": None,
+            "bear_call_spread": None,
+            "bull_put_available": False,
+            "bear_call_available": False,
+            "selected_legs": {
+                "short_put": None,
+                "long_put": None,
+                "short_call": None,
+                "long_call": None,
+            },
+            "provider_diagnostics": provider_diagnostics,
+        }
+
+    short_put = select_leg(contracts, target_delta=-0.30, option_type="put")
+    long_put = select_leg(contracts, target_delta=-0.20, option_type="put")
+    short_call = select_leg(contracts, target_delta=0.30, option_type="call")
+    long_call = select_leg(contracts, target_delta=0.20, option_type="call")
+
+    bull_put_spread = build_spread(
+        short_leg=short_put,
+        long_leg=long_put,
+        strategy_type="bull put spread",
+        ticker=ticker,
+        underlying_price=underlying_price,
+        expiration_date=expiration_date,
+        dte=dte,
+    )
+
+    bear_call_spread = build_spread(
+        short_leg=short_call,
+        long_leg=long_call,
+        strategy_type="bear call spread",
+        ticker=ticker,
+        underlying_price=underlying_price,
+        expiration_date=expiration_date,
+        dte=dte,
+    )
+
+    bull_put_spread = classify_spread(
+        evaluate_spread(bull_put_spread, pop_weight=pop_weight, ror_weight=ror_weight)
+    )
+    bear_call_spread = classify_spread(
+        evaluate_spread(bear_call_spread, pop_weight=pop_weight, ror_weight=ror_weight)
+    )
+
+    return {
+        "ticker": ticker,
+        "bull_put_spread": bull_put_spread,
+        "bear_call_spread": bear_call_spread,
+        "bull_put_available": bull_put_spread is not None,
+        "bear_call_available": bear_call_spread is not None,
+        "selected_legs": {
+            "short_put": short_put,
+            "long_put": long_put,
+            "short_call": short_call,
+            "long_call": long_call,
+        },
+        "provider_diagnostics": provider_diagnostics,
+    }
+
+
+def enrich_spreads_with_stability(spreads, stability_map):
+    for spread in spreads:
+        key = f"{spread.get('ticker')}|{spread.get('strategy_type')}"
+        stability_info = stability_map.get(key, {"count": 0, "stability": "new"})
+        spread["stability_count"] = stability_info["count"]
+        spread["stability_level"] = stability_info["stability"]
+
+
+def compute_stability_boost(stability_level):
+    if stability_level == "stable":
+        return 1.0
+    if stability_level == "emerging":
+        return 0.5
+    return 0.0
+
+
+def apply_stability_boost(spreads):
+    for spread in spreads:
+        stability_level = spread.get("stability_level", "new")
+        stability_boost = compute_stability_boost(stability_level)
+
+        spread["stability_boost"] = round(stability_boost, 2)
+        spread["adjusted_score"] = round(
+            spread.get("adjusted_score", 0) + stability_boost, 2
+        )
+
+        if "score_breakdown" in spread:
+            spread["score_breakdown"]["stability_boost"] = round(stability_boost, 2)
+            spread["score_breakdown"]["adjusted_score"] = spread["adjusted_score"]
+
+
+def run_scan_engine(
+    profile_name="balanced",
+    group_name="tech",
+    dte_min=20,
+    dte_max=35,
+    min_score=65,
+    min_consistency=3,
+    export_csv=False,
+):
+    config = load_config()
+
+    profile_config = PROFILES.get(profile_name) if profile_name else None
+    tickers = TICKER_GROUPS.get(group_name, ["TSLA", "META", "NVDA"])
+
+    pop_weight = config.get("pop_weight")
+    ror_weight = config.get("ror_weight")
+
+    if profile_config:
+        pop_weight = profile_config["pop_weight"] if pop_weight is None else pop_weight
+        ror_weight = profile_config["ror_weight"] if ror_weight is None else ror_weight
+
+    pop_weight = 0.6 if pop_weight is None else pop_weight
+    ror_weight = 0.4 if ror_weight is None else ror_weight
+
+    overall_start = time.time()
+
+    provider_result = get_market_data(
+        tickers,
+        dte_min=dte_min,
+        dte_max=dte_max,
+    )
+
+    data = provider_result["market_data"]
+    missing_tickers = provider_result["missing_tickers"]
+    provider_name = provider_result["provider"]
+    provider_errors = provider_result.get("provider_errors", [])
+
+    results = []
+    available_tickers = list(data.keys())
+    max_workers = min(5, len(available_tickers)) if available_tickers else 1
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {}
+
+        for ticker in available_tickers:
+            future = executor.submit(
+                process_ticker,
+                ticker,
+                data[ticker],
+                pop_weight,
+                ror_weight,
+            )
+            futures[future] = ticker
+
+        for future in as_completed(futures):
+            result = future.result()
+            results.append(result)
+
+    filtered = filter_results(
+        results,
+        min_score=min_score,
+        min_consistency=min_consistency,
+    )
+
+    stability_map = compute_alert_stability()
+    enrich_spreads_with_stability(filtered.get("alerts", []), stability_map)
+    enrich_spreads_with_stability(filtered.get("qualified", []), stability_map)
+
+    apply_stability_boost(filtered.get("qualified", []))
+
+    filtered["alerts"].sort(
+        key=lambda s: s.get("adjusted_score", 0),
+        reverse=True,
+    )
+    filtered["qualified"].sort(
+        key=lambda s: s.get("adjusted_score", 0),
+        reverse=True,
+    )
+
+    filtered["summary"] = build_summary(
+        filtered.get("qualified", []),
+        filtered.get("near_miss", []),
+    )
+
+    filtered["missing_tickers"] = missing_tickers
+    filtered["provider"] = provider_name
+    filtered["provider_errors"] = provider_errors
+    filtered["execution_time_seconds"] = round(time.time() - overall_start, 2)
+    filtered["profile"] = profile_name
+    filtered["ticker_group"] = group_name
+    filtered["scoring_weights"] = {
+        "pop_weight": pop_weight,
+        "ror_weight": ror_weight,
+    }
+    filtered["alert_thresholds"] = {
+        "min_score": min_score,
+        "min_consistency": min_consistency,
+    }
+    filtered["dte_range"] = {
+        "dte_min": dte_min,
+        "dte_max": dte_max,
+    }
+
+    if export_csv:
+        filtered["alerts_export_path"] = export_alerts_to_csv(filtered.get("alerts", []))
+    else:
+        filtered["alerts_export_path"] = None
+
+    save_scan(filtered)
+
+    return filtered

@@ -1,10 +1,9 @@
-import json
-import subprocess
-import sys
-from pathlib import Path
 
-import streamlit as st
+from pathlib import Path
+from engine import run_scan_engine
 from history import compute_trend_insights
+import streamlit as st
+
 
 st.set_page_config(page_title="Options Trading App", layout="wide")
 
@@ -23,7 +22,7 @@ profile = st.sidebar.selectbox(
 
 ticker_group = st.sidebar.selectbox(
     "Ticker Group",
-    ["tech"],
+    ["tech", "index", "mixed"],
     index=0,
 )
 
@@ -64,33 +63,16 @@ min_consistency = st.sidebar.number_input(
 run_button = st.sidebar.button("Run Scan")
 
 
-def run_scan(
-    selected_profile: str,
-    selected_group: str,
-    dte_min: int,
-    dte_max: int,
-    min_score: int,
-    min_consistency: int,
-):
-    command = [
-        sys.executable,
-        str(MAIN_PY),
-        "--profile", selected_profile,
-        "--group", selected_group,
-        "--dte-min", str(dte_min),
-        "--dte-max", str(dte_max),
-        "--min-score", str(min_score),
-        "--min-consistency", str(min_consistency),
-    ]
-
-    result = subprocess.run(
-        command,
-        capture_output=True,
-        text=True,
-        cwd=BASE_DIR,
+def run_scan(profile, ticker_group, dte_min, dte_max, min_score, min_consistency):
+    return run_scan_engine(
+        profile_name=profile,
+        group_name=ticker_group,
+        dte_min=dte_min,
+        dte_max=dte_max,
+        min_score=min_score,
+        min_consistency=min_consistency,
+        export_csv=False,
     )
-
-    return result
 
 
 def render_metric_row(spread):
@@ -276,99 +258,95 @@ def render_daily_summary(output):
         st.markdown("### Takeaway")
         st.write(takeaway)
 
+def render_qualified_list(qualified):
+    st.subheader("Qualified Trades")
+
+    if not qualified:
+        st.info("No qualified trades available.")
+        return
+
+    for i, spread in enumerate(qualified, start=1):
+        with st.container(border=True):
+            st.markdown(
+                f"### {i}. {spread.get('ticker')} | {spread.get('strategy_type')}"
+            )
+
+            render_metric_row(spread)
+
+            st.markdown(
+                f"**Premium Context:** {spread.get('volatility_context')}"
+            )
+
+            st.markdown(
+                f"**Stability:** {spread.get('stability_level', 'n/a')} "
+                f"({spread.get('stability_count', 0)})"
+            )
+
+            st.markdown(
+                f"**Decision Summary:** {spread.get('decision_summary', 'No summary available.')}"
+            )
+
+            with st.expander("More details"):
+                st.json(spread)
+
+
 if run_button:
     with st.spinner("Running scan..."):
-        result = run_scan(
-                            profile,
-                            ticker_group,
-                            dte_min,
-                            dte_max,
-                            min_score,
-                            min_consistency
-                        )
-
-    stdout = result.stdout.strip()
-    stderr = result.stderr.strip()
+        output = run_scan(
+            profile,
+            ticker_group,
+            dte_min,
+            dte_max,
+            min_score,
+            min_consistency,
+        )
 
     st.subheader("Execution Status")
     #st.write(f"Return code: {result.returncode}")
 
-    if result.returncode != 0:
-        st.error("Scan failed before JSON parsing.")
-        st.subheader("stderr")
-        st.code(stderr or "(empty)")
-        st.subheader("stdout")
-        st.code(stdout or "(empty)")
-    else:
-        try:
-            output = json.loads(stdout)
+    summary = output.get("summary", {})
+    alerts = output.get("alerts", [])
+    qualified = output.get("qualified", [])
+    top_overall = qualified[0] if qualified else summary.get("top_overall")
 
-            summary = output.get("summary", {})
-            alerts = output.get("alerts", [])
-            qualified = output.get("qualified", [])
-            top_overall = qualified[0] if qualified else summary.get("top_overall")
+    st.success("Scan completed successfully.")
 
-            ##  st.success("JSON parsed successfully.")
+    tab_overview, tab_alerts, tab_qualified, tab_history, tab_summary, tab_raw = st.tabs(
+            ["Overview", "Alerts", "Qualified", "History", "Daily Summary", "Raw Output"]
+        )
 
-            tab_overview, tab_alerts, tab_history, tab_summary, tab_raw = st.tabs(
-                        ["Overview", "Alerts", "History", "Daily Summary", "Raw Output"]
-                    )
+    with tab_overview:
+        with st.expander("Run Metadata", expanded=True):
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Execution Time", output.get("execution_time_seconds"))
+            col2.metric("Profile", output.get("profile"))
+            col3.metric("Ticker Group", output.get("ticker_group"))
 
-            with tab_overview:
-                with st.expander("Run Metadata", expanded=True):
-                    col1, col2, col3 = st.columns(3)
-                    col1.metric("Execution Time", output.get("execution_time_seconds"))
-                    col2.metric("Profile", output.get("profile"))
-                    col3.metric("Ticker Group", output.get("ticker_group"))
+            col4, col5, col6 = st.columns(3)
+            dte_range = output.get("dte_range", {})
+            alert_thresholds = output.get("alert_thresholds", {})
+            scoring_weights = output.get("scoring_weights", {})
 
-                    col4, col5, col6 = st.columns(3)
-                    dte_range = output.get("dte_range", {})
-                    alert_thresholds = output.get("alert_thresholds", {})
-                    scoring_weights = output.get("scoring_weights", {})
+            col4.metric(
+                "DTE Range",
+                f"{dte_range.get('dte_min', '-')}-{dte_range.get('dte_max', '-')}"
+            )
+            col5.metric("Min Score", alert_thresholds.get("min_score"))
+            col6.metric("POP Weight", scoring_weights.get("pop_weight"))
 
-                    col4.metric(
-                        "DTE Range",
-                        f"{dte_range.get('dte_min', '-')}-{dte_range.get('dte_max', '-')}"
-                    )
-                    col5.metric(
-                        "Min Score",
-                        alert_thresholds.get("min_score")
-                    )
-                    col6.metric(
-                        "POP Weight",
-                        scoring_weights.get("pop_weight")
-                    )
+        render_trade_card("Top Overall", top_overall)
 
-                render_trade_card("Top Overall", top_overall)
+    with tab_alerts:
+        render_alert_list(alerts)
 
-            with tab_alerts:
-                render_alert_list(alerts)
+    with tab_qualified:
+        render_qualified_list(qualified)
 
-            with tab_history:
-                render_trend_insights()
+    with tab_history:
+        render_trend_insights()
 
-            with tab_summary:
-                render_daily_summary(output)
+    with tab_summary:
+        render_daily_summary(output)
 
-            with tab_raw:
-                with st.expander("Raw stdout", expanded=False):
-                    st.code(stdout or "(empty)")
-
-                with st.expander("stderr logs", expanded=False):
-                    st.code(stderr or "(empty)")
-
-
-
-        except json.JSONDecodeError as e:
-            st.error(f"Failed to parse stdout as JSON: {e}")
-            st.subheader("Raw stdout")
-            st.code(stdout or "(empty)")
-            st.subheader("stderr logs")
-            st.code(stderr or "(empty)")
-
-        except Exception as e:
-            st.error(f"JSON parsed, but UI rendering failed: {e}")
-            st.subheader("Raw stdout")
-            st.code(stdout or "(empty)")
-            st.subheader("stderr logs")
-            st.code(stderr or "(empty)")
+    with tab_raw:
+        st.json(output)
