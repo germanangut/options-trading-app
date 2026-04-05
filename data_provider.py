@@ -10,6 +10,7 @@ import requests
 from dotenv import load_dotenv
 
 from mock_data import MOCK_OPTIONS_DATA
+from settings import get_settings
 
 DEBUG_MODE = "--debug" in sys.argv
 
@@ -32,8 +33,12 @@ OPTION_SNAPSHOTS_URL = f"{ALPACA_DATA_BASE_URL}/v1beta1/options/snapshots"
 STOCK_LATEST_TRADES_URL = f"{ALPACA_DATA_BASE_URL}/v2/stocks/trades/latest"
 
 CACHE_TTL_SECONDS = 60
-CACHE_DIR = Path(".cache")
-CACHE_DIR.mkdir(exist_ok=True)
+
+
+def get_cache_dir():
+    cache_dir = Path(get_settings().get("cache_dir", ".cache"))
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    return cache_dir
 
 
 def build_market_data_cache_key(tickers, dte_min, dte_max):
@@ -48,7 +53,7 @@ def build_market_data_cache_key(tickers, dte_min, dte_max):
 
 
 def get_cache_file_path(cache_key):
-    return CACHE_DIR / f"market_data_{cache_key}.json"
+    return get_cache_dir() / f"market_data_{cache_key}.json"
 
 
 def get_cached_market_data(cache_key):

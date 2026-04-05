@@ -1,15 +1,14 @@
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from config_loader import load_config
 from data_provider import get_market_data, is_cached_market_data_available
 from decisions import classify_spread
 from exporter import export_alerts_to_csv
 from history import save_scan, compute_alert_stability
 from metrics import evaluate_spread
 from output import filter_results, build_summary
-from profiles import PROFILES
 from selection import select_leg
+from settings import get_settings
 from spreads import build_spread
 from ticker_groups import TICKER_GROUPS
 
@@ -128,25 +127,31 @@ def run_scan_engine(
     ror_weight=None,
     export_csv=False,
 ):
-    config = load_config()
+    settings = get_settings(
+        {
+            "profile": profile_name,
+            "ticker_group": group_name,
+            "dte_min": dte_min,
+            "dte_max": dte_max,
+            "min_score": min_score,
+            "min_consistency": min_consistency,
+            "pop_weight": pop_weight,
+            "ror_weight": ror_weight,
+        }
+    )
 
-    profile_config = PROFILES.get(profile_name) if profile_name else None
-    
-    # Use provided tickers, or fall back to group, or default
+    effective_profile_name = settings.get("profile", profile_name)
+    effective_group_name = settings.get("ticker_group", group_name)
+
     if tickers is None:
-        tickers = TICKER_GROUPS.get(group_name, ["TSLA", "META", "NVDA"])
-    
-    # Get scoring weights from profile/config/params
-    if pop_weight is None:
-        pop_weight = profile_config["pop_weight"] if profile_config else config.get("pop_weight", 0.6)
-    if ror_weight is None:
-        ror_weight = profile_config["ror_weight"] if profile_config else config.get("ror_weight", 0.4)
-    
-    # Set defaults for min_score and min_consistency if None
-    if min_score is None:
-        min_score = profile_config["min_score"] if profile_config else config.get("min_score", 65)
-    if min_consistency is None:
-        min_consistency = profile_config["min_consistency"] if profile_config else config.get("min_consistency", 3)
+        tickers = TICKER_GROUPS.get(effective_group_name, ["TSLA", "META", "NVDA"])
+
+    pop_weight = settings.get("pop_weight", pop_weight)
+    ror_weight = settings.get("ror_weight", ror_weight)
+    min_score = settings.get("min_score", min_score)
+    min_consistency = settings.get("min_consistency", min_consistency)
+    dte_min = settings.get("dte_min", dte_min)
+    dte_max = settings.get("dte_max", dte_max)
 
     overall_start = time.time()
 
@@ -212,8 +217,8 @@ def run_scan_engine(
     filtered["provider"] = provider_name
     filtered["provider_errors"] = provider_errors
     filtered["execution_time_seconds"] = round(time.time() - overall_start, 2)
-    filtered["profile"] = profile_name
-    filtered["ticker_group"] = group_name
+    filtered["profile"] = effective_profile_name
+    filtered["ticker_group"] = effective_group_name
     filtered["scoring_weights"] = {
         "pop_weight": pop_weight,
         "ror_weight": ror_weight,

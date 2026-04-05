@@ -38,10 +38,20 @@ The project includes a lightweight `settings.py` layer to centralize runtime con
 
 1. built-in defaults
 2. `config.yaml`
-3. CLI overrides passed into `engine.py`
-4. environment variables for Alpaca credentials and base URLs
+3. profile defaults from `profiles.py`
+4. CLI overrides passed into `engine.py`
+5. environment variables
 
 This keeps configuration behavior backward-compatible while providing a single place to resolve runtime settings.
+
+Supported environment variables include:
+
+- `ALPACA_API_KEY`
+- `ALPACA_API_SECRET`
+- `ALPACA_DATA_BASE_URL`
+- `ALPACA_TRADING_BASE_URL`
+- `HISTORY_DIR` (default: `.history`)
+- `CACHE_DIR` (default: `.cache`)
 
 This modular design enables:
 - Easy testing of business logic in isolation
@@ -139,6 +149,15 @@ Run the CLI entry point inside the container:
 docker run --rm options-trading-app python main.py --profile balanced --group tech --alerts-only
 ```
 
+To persist history and cache across container runs, pass directory overrides and mount them if needed:
+
+```bash
+docker run --rm -p 8501:8501 \
+  -e HISTORY_DIR=/data/history \
+  -e CACHE_DIR=/data/cache \
+  options-trading-app
+```
+
 ## Ticker groups
 
 The project includes these ticker groups by default:
@@ -157,9 +176,10 @@ The project includes these ticker groups by default:
 
 ## Notes
 
-- Market data is cached under `.cache` for fast repeated scans.
-- Historical scans are appended to `.history/run_<date>.jsonl`.
+- Market data is cached under `.cache` by default, or under `CACHE_DIR` if provided.
+- Historical scans are appended to `.history/run_<date>.jsonl` by default, or under `HISTORY_DIR` if provided.
 - If Alpaca credentials are missing, the app uses built-in mock option data.
+- Local `.env` loading is optional; runtime environment variables from Docker or CI/CD are supported.
 
 ## License
 
