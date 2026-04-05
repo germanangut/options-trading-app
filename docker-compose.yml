@@ -1,0 +1,26 @@
+name: options-trading-app
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8501"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      HISTORY_DIR: /data/history
+      CACHE_DIR: /data/cache
+    volumes:
+      - ./.history:/data/history
+      - ./.cache:/data/cache
+      - ./.history:/app/.history
+      - ./.cache:/app/.cache
+    command:
+      - streamlit
+      - run
+      - app.py
+      - --server.address=0.0.0.0
+      - --server.port=8501

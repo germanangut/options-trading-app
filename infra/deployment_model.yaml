@@ -1,0 +1,78 @@
+system:
+  name: options-trading-app
+
+components:
+  app:
+    type: single containerized Python application
+    entrypoints:
+      ui: app.py
+      cli: main.py
+    runtime:
+      image_source: Dockerfile
+      default_command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+    state: stateless compute with filesystem-backed runtime data
+
+  data_provider:
+    type: external API integration
+    name: Alpaca
+    role: market data and options contract provider
+    dependency_mode: optional at runtime
+    fallback: built-in mock data when credentials are not configured
+
+  storage:
+    type: local filesystem persistence
+    stateful_parts:
+      - .history for scan history and trend analysis
+      - .cache for cached market data
+    access_mode: mounted directories in containerized local runs
+
+interfaces:
+  ui:
+    type: web UI
+    framework: Streamlit
+    port: 8501
+    protocol: http
+  cli:
+    type: command-line interface
+    command: python main.py
+
+environment:
+  required: []
+  optional:
+    - ALPACA_API_KEY
+    - ALPACA_API_SECRET
+    - ALPACA_DATA_BASE_URL
+    - ALPACA_TRADING_BASE_URL
+    - HISTORY_DIR
+    - CACHE_DIR
+
+deployment:
+  model: single-service container deployment
+  scaling:
+    current: single instance
+    mode: manual
+  state:
+    application_container: stateless
+    filesystem_data: stateful
+  local_runtime:
+    orchestrator: docker compose
+    service_count: 1
+
+ci_cd:
+  workflow: .github/workflows/ci.yml
+  pipeline_steps:
+    - checkout repository
+    - install Python dependencies
+    - validate Python source compilation
+    - run unit tests with pytest
+    - build Docker image for validation
+
+future:
+  possible_targets:
+    - container hosting platform
+    - virtual machine running Docker
+    - managed container service
+  likely_extensions:
+    - external persistent volume for history and cache
+    - secret-managed environment variable injection
+    - deployment-stage workflows after CI validation is stabilized
