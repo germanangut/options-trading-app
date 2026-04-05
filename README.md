@@ -149,12 +149,27 @@ Run the CLI entry point inside the container:
 docker run --rm options-trading-app python main.py --profile balanced --group tech --alerts-only
 ```
 
-To persist history and cache across container runs, pass directory overrides and mount them if needed:
+Pass runtime environment variables with `--env-file` or `-e`:
+
+```bash
+docker run --rm --env-file .env options-trading-app python main.py --trend-insights
+```
+
+```bash
+docker run --rm -p 8501:8501 \
+  -e ALPACA_API_KEY=your_api_key \
+  -e ALPACA_API_SECRET=your_api_secret \
+  options-trading-app
+```
+
+To persist history and cache across container runs, mount host directories and point `HISTORY_DIR` and `CACHE_DIR` at them:
 
 ```bash
 docker run --rm -p 8501:8501 \
   -e HISTORY_DIR=/data/history \
   -e CACHE_DIR=/data/cache \
+  -v ./docker-data/history:/data/history \
+  -v ./docker-data/cache:/data/cache \
   options-trading-app
 ```
 
