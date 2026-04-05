@@ -106,6 +106,28 @@ Run the Streamlit dashboard:
 streamlit run app.py
 ```
 
+## Docker usage
+
+Build the image:
+
+```bash
+docker build -t options-trading-app .
+```
+
+Run the Streamlit UI:
+
+```bash
+docker run --rm -p 8501:8501 options-trading-app
+```
+
+Then open `http://localhost:8501` in your browser.
+
+Run the CLI entry point inside the container:
+
+```bash
+docker run --rm options-trading-app python main.py --profile balanced --group tech --alerts-only
+```
+
 ## Ticker groups
 
 The project includes these ticker groups by default:
