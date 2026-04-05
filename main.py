@@ -5,7 +5,7 @@ import sys
 from pathlib import Path
 
 from config_loader import load_config
-from engine import run_scan_engine
+from engine import process_ticker as _process_ticker, run_scan_engine
 from history import compute_trend_insights
 from output import build_summary
 from profiles import PROFILES
@@ -127,6 +127,11 @@ def parse_arguments():
         "ror_weight": ror_weight,
         "export_csv": EXPORT_CSV_MODE,
     }
+
+
+def process_ticker(ticker, ticker_data, pop_weight=None, ror_weight=None):
+    """Backward-compatible wrapper for the engine ticker processor."""
+    return _process_ticker(ticker, ticker_data, pop_weight, ror_weight)
 
 
 def build_alerts_only_output(filtered):

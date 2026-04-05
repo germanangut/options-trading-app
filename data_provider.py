@@ -446,6 +446,42 @@ def normalize_discovered_contracts(
     }
 
 
+def normalize_contract(raw_contract):
+    """Normalize a single contract shape for legacy callers and tests."""
+    if not isinstance(raw_contract, dict):
+        return {
+            "strike": None,
+            "type": None,
+            "delta": None,
+            "bid": None,
+            "ask": None,
+            "open_interest": None,
+        }
+
+    details = raw_contract.get("details") if isinstance(raw_contract.get("details"), dict) else {}
+    greeks = raw_contract.get("greeks") if isinstance(raw_contract.get("greeks"), dict) else {}
+    latest_quote = raw_contract.get("latestQuote") if isinstance(raw_contract.get("latestQuote"), dict) else {}
+
+    strike_raw = raw_contract.get("strike_price", details.get("strike_price"))
+    option_type = raw_contract.get("type", details.get("type"))
+    if option_type:
+        option_type = option_type.lower()
+
+    open_interest_raw = raw_contract.get("open_interest")
+
+    strike = float(strike_raw) if strike_raw is not None else None
+    open_interest = int(open_interest_raw) if open_interest_raw is not None else None
+
+    return {
+        "strike": strike,
+        "type": option_type,
+        "delta": greeks.get("delta"),
+        "bid": latest_quote.get("bp"),
+        "ask": latest_quote.get("ap"),
+        "open_interest": open_interest,
+    }
+
+
 def normalize_discovered_contract(raw_contract, option_snapshots):
     contract_symbol = raw_contract.get("symbol")
     option_type = raw_contract.get("type")
