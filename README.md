@@ -30,7 +30,18 @@ The application follows a clean separation of concerns:
 - **CLI Layer** (`main.py`): Thin wrapper that parses command-line arguments, calls the scanning engine, and formats output based on requested mode.
 - **Business Logic Layer** (`engine.py`): Core scanning engine containing all market data processing, spread evaluation, filtering, and result enrichment logic.
 - **Presentation Layer** (`app.py`, `ui/`): Streamlit-based web interface for interactive scanning and visualization.
-- **Supporting Modules**: Data access, configuration, metrics calculation, and persistence utilities.
+- **Supporting Modules**: Data access, configuration, metrics calculation, persistence utilities, and centralized runtime settings.
+
+### Runtime settings
+
+The project includes a lightweight `settings.py` layer to centralize runtime configuration resolution. It merges values from:
+
+1. built-in defaults
+2. `config.yaml`
+3. CLI overrides passed into `engine.py`
+4. environment variables for Alpaca credentials and base URLs
+
+This keeps configuration behavior backward-compatible while providing a single place to resolve runtime settings.
 
 This modular design enables:
 - Easy testing of business logic in isolation
