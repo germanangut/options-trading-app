@@ -1,0 +1,61 @@
+app:
+  name: options-trading-app
+  runtime:
+    language: python
+    container_python: "3.11"
+  entrypoints:
+    ui:
+      file: app.py
+      framework: streamlit
+      command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+    cli:
+      file: main.py
+      command: python main.py
+
+network:
+  port: 8501
+  protocol: http
+  bind_address: 0.0.0.0
+
+environment:
+  required: []
+  optional:
+    - name: ALPACA_API_KEY
+      purpose: Enables live Alpaca market data access when provided.
+    - name: ALPACA_API_SECRET
+      purpose: Enables live Alpaca market data access when provided.
+    - name: ALPACA_DATA_BASE_URL
+      default: https://data.alpaca.markets
+      purpose: Overrides the Alpaca market data base URL.
+    - name: ALPACA_TRADING_BASE_URL
+      default: https://paper-api.alpaca.markets
+      purpose: Overrides the Alpaca trading base URL.
+    - name: HISTORY_DIR
+      default: .history
+      purpose: Overrides the directory used for persisted run history.
+    - name: CACHE_DIR
+      default: .cache
+      purpose: Overrides the directory used for cached market data.
+
+storage:
+  history:
+    path: .history
+    env_var: HISTORY_DIR
+  cache:
+    path: .cache
+    env_var: CACHE_DIR
+
+container:
+  dockerfile: Dockerfile
+  base_image: python:3.11-slim
+  workdir: /app
+  exposed_port: 8501
+  default_command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+
+ci:
+  workflow: .github/workflows/ci.yml
+  validates:
+    - Python dependency installation
+    - Python source compilation via `python -m compileall .`
+    - Unit test execution via `python -m pytest -q`
+    - Docker image build via `docker build --file Dockerfile --tag options-trading-app:ci .`
