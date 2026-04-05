@@ -35,3 +35,15 @@ jobs:
           else
             echo "No tests discovered yet. Add tests to extend CI coverage."
           fi
+
+  docker-build:
+    name: Docker build validation
+    runs-on: ubuntu-latest
+    needs: test
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: docker build --file Dockerfile --tag options-trading-app:ci .
