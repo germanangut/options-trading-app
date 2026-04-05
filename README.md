@@ -62,16 +62,16 @@ This modular design enables:
 ## Installation
 
 1. Create and activate a virtual environment.
-2. Install dependencies:
+2. Install the app dependencies:
 
 ```bash
-pip install requests pyyaml python-dotenv
+pip install -r requirements.txt
 ```
 
-3. If you want the Streamlit UI:
+3. Install the test runner for local unit-test execution:
 
 ```bash
-pip install streamlit
+pip install pytest
 ```
 
 4. Optionally create `.env` with Alpaca credentials:
@@ -172,6 +172,47 @@ docker run --rm -p 8501:8501 \
   -v ./docker-data/cache:/data/cache \
   options-trading-app
 ```
+
+## Testing
+
+### Unit testing strategy
+
+The project uses a lightweight `pytest` suite focused on deterministic business-logic validation rather than live brokerage integration.
+
+- `test_data_provider.py` covers provider fallback behavior, missing ticker reporting, and contract normalization/validation helpers.
+- `test_engine.py` covers ticker-level regression checks for spread availability, selected legs, and final quality labels.
+- Unit tests should prefer pure functions and stable regression scenarios over UI automation or live network calls.
+- Mock/fallback market data is the default test path; CI forces `ALPACA_API_KEY` and `ALPACA_API_SECRET` to blank values so test runs stay repeatable.
+- If Alpaca credentials are present locally, the fallback-specific provider test may skip itself by design.
+
+Run the unit suite locally:
+
+```bash
+python -m pytest -q
+```
+
+For Windows PowerShell, you can mirror the CI-style no-credentials mode with:
+
+```powershell
+$env:ALPACA_API_KEY=""
+$env:ALPACA_API_SECRET=""
+python -m pytest -q
+```
+
+### CI validation
+
+GitHub Actions currently validates:
+
+- the Python unit test suite
+- a Docker image build using the existing `Dockerfile`
+- no registry push or deployment steps yet
+
+### Guidelines for adding tests
+
+1. Keep tests near the current repo layout using `test_*.py` files at the project root.
+2. Assert user-visible outcomes such as provider choice, spread availability, chosen strikes, and spread labels.
+3. Avoid depending on live Alpaca responses for unit coverage.
+4. Keep fixtures small, readable, and compatible with the existing project structure.
 
 ## Ticker groups
 
