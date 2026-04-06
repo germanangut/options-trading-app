@@ -5,6 +5,12 @@ def compact_spread(spread):
     return {
         "ticker": spread.get("ticker"),
         "strategy_type": spread.get("strategy_type"),
+        "strategy_key": spread.get("strategy_key"),
+        "strategy_label": spread.get("strategy_label"),
+        "strategy_family": spread.get("strategy_family"),
+        "directional_bias": spread.get("directional_bias"),
+        "strategy_active": spread.get("strategy_active"),
+        "strategy_supported": spread.get("strategy_supported"),
         "adjusted_score": spread.get("adjusted_score", spread.get("score")),
         "score": spread.get("score"),
         "consistency_bonus": spread.get("consistency_bonus", 0),

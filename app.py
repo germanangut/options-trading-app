@@ -176,7 +176,7 @@ def render_top_decision_panel(spread, qualified_count, fallback_spread=None):
 
         summary_text = (
             f"{qualified_count} qualified trade(s) identified in this run. "
-            f"Current assessment: {opportunity_label}."
+            f"Current assessment under the active rules: {opportunity_label}."
         )
 
         if opportunity_label == "Strong opportunity":
@@ -278,6 +278,18 @@ def render_trade_lifecycle():
         with col4:
             st.markdown("### 4. Outcome")
             st.caption("Use **Daily Summary** for the run-level interpretation and takeaways.")
+
+
+def render_system_boundaries():
+    """Communicate the app's analytical role and practical limits."""
+    st.subheader("System Boundaries")
+
+    with st.container(border=True):
+        st.caption(
+            "This app evaluates options opportunities using the current rules and available market data. "
+            "Its outputs are intended for decision support, not automatic execution. Data/provider coverage can affect results, "
+            "so final trade decisions should always use your own judgment."
+        )
 
 
 def render_trade_card(title, spread):
@@ -486,13 +498,16 @@ if run_button:
         )
 
     with tab_overview:
+        
+        render_trade_lifecycle()
+        
         render_top_decision_panel(
             top_overall,
             summary.get("qualified_count", len(qualified)),
             qualified[0] if qualified else None,
         )
+        render_system_boundaries()
         render_system_signals(output)
-        render_trade_lifecycle()
 
         with st.expander("Run Metadata", expanded=True):
             col1, col2, col3 = st.columns(3)

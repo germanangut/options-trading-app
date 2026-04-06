@@ -10,6 +10,11 @@ from output import filter_results, build_summary
 from selection import select_leg
 from settings import get_settings
 from spreads import build_spread
+from strategies import (
+    BEAR_CALL_SPREAD,
+    BULL_PUT_SPREAD,
+    apply_strategy_metadata,
+)
 from ticker_groups import TICKER_GROUPS
 
 
@@ -44,7 +49,7 @@ def process_ticker(ticker, ticker_data, pop_weight, ror_weight):
     bull_put_spread = build_spread(
         short_leg=short_put,
         long_leg=long_put,
-        strategy_type="bull put spread",
+        strategy_type=BULL_PUT_SPREAD["display_label"],
         ticker=ticker,
         underlying_price=underlying_price,
         expiration_date=expiration_date,
@@ -54,7 +59,7 @@ def process_ticker(ticker, ticker_data, pop_weight, ror_weight):
     bear_call_spread = build_spread(
         short_leg=short_call,
         long_leg=long_call,
-        strategy_type="bear call spread",
+        strategy_type=BEAR_CALL_SPREAD["display_label"],
         ticker=ticker,
         underlying_price=underlying_price,
         expiration_date=expiration_date,
@@ -66,6 +71,12 @@ def process_ticker(ticker, ticker_data, pop_weight, ror_weight):
     )
     bear_call_spread = classify_spread(
         evaluate_spread(bear_call_spread, pop_weight=pop_weight, ror_weight=ror_weight)
+    )
+
+    bull_put_spread = apply_strategy_metadata(bull_put_spread, BULL_PUT_SPREAD["key"])
+    bear_call_spread = apply_strategy_metadata(
+        bear_call_spread,
+        BEAR_CALL_SPREAD["key"],
     )
 
     return {

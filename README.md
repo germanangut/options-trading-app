@@ -1,91 +1,81 @@
 # Options Trading App
 
-A modular Python-based options scanning dashboard for directional credit spread strategies. The app evaluates bull put spreads and bear call spreads across configured ticker groups, ranks opportunities using probability-of-profit (POP) and return-on-risk (ROR), and generates alerts with historical stability insights.
+`Options Trading App` is a Python + Streamlit decision-support tool for evaluating credit spread opportunities. It scans configured ticker groups, scores bull put and bear call setups using the existing engine rules, highlights the best current candidate, and adds run-health and historical context for review.
 
-## What it does
+> This project is analytical only. It helps evaluate opportunities; it does **not** place live trades or automate execution.
 
-- Fetches option chain data from Alpaca when credentials are available.
-- Falls back to local mock data when Alpaca access is not configured.
-- Builds and evaluates credit spreads for both bull put and bear call strategies.
-- Scores opportunities using configurable POP/ROR weighting.
-- Applies screening rules for open interest, strike sanity, and volatility context.
-- Generates alerts, compact summaries, score explanations, and trend insights.
-- Persists daily run history under `.history` and supports trend/stability analysis.
+## What the app looks like today
 
-## Key features
+The current Streamlit dashboard is organized around a practical review workflow:
 
-- `main.py` is the CLI entry point that parses arguments and orchestrates scanning.
-- `engine.py` is the core scanning engine containing all business logic.
-- `app.py` provides a Streamlit UI for interactive scanning.
-- Configurable profiles: `conservative`, `balanced`, and `aggressive`.
-- Built-in ticker groups such as `tech`, `index`, and `mixed`.
-- Customizable DTE window and scoring thresholds via CLI or `config.yaml`.
-- Alerts export to CSV via `--export-csv`.
-- Compact output, explain-score output, daily summary, and alerts-only JSON modes.
+| Area | Purpose |
+| --- | --- |
+| `Overview` | Shows the Top Decision, System Signals, Trade Lifecycle, and System Boundaries |
+| `Alerts` | Surfaces initial opportunities worth reviewing |
+| `Qualified Trades` | Focuses on the strongest current candidates that cleared the active thresholds |
+| `History` | Shows recurring patterns and stability context from prior runs |
+| `Daily Summary` | Gives a run-level interpretation of what the scan found |
+| `Raw Output` | Exposes the full structured engine response for inspection |
 
-## Architecture
+## Core capabilities
 
-The application follows a clean separation of concerns:
+- Uses Alpaca option data when credentials are available
+- Falls back to built-in mock data when credentials are not configured
+- Evaluates both **bull put spreads** and **bear call spreads**
+- Scores candidates using the engine’s existing **POP / ROR** logic and current rule set
+- Highlights a best current trade and explains why it surfaced
+- Tracks light historical context in `.history` for stability/trend review
+- Caches market data in `.cache` for faster repeat runs
+- Supports both a Streamlit UI and a CLI workflow
 
-- **CLI Layer** (`main.py`): Thin wrapper that parses command-line arguments, calls the scanning engine, and formats output based on requested mode.
-- **Business Logic Layer** (`engine.py`): Core scanning engine containing all market data processing, spread evaluation, filtering, and result enrichment logic.
-- **Presentation Layer** (`app.py`, `ui/`): Streamlit-based web interface for interactive scanning and visualization.
-- **Supporting Modules**: Data access, configuration, metrics calculation, persistence utilities, and centralized runtime settings.
+## Current system boundaries
 
-### Runtime settings
+The app is intended for **analysis and decision support**:
 
-The project includes a lightweight `settings.py` layer to centralize runtime configuration resolution. It merges values from:
+- Results reflect the current rules and available data
+- Missing tickers or provider issues can reduce coverage for a run
+- A run with no alerts or no qualified trades can still be a healthy outcome
+- Final trade decisions require user judgment
 
-1. built-in defaults
-2. `config.yaml`
-3. profile defaults from `profiles.py`
-4. CLI overrides passed into `engine.py`
-5. environment variables
+## Quick start
 
-This keeps configuration behavior backward-compatible while providing a single place to resolve runtime settings.
+### 1) Create and activate a virtual environment
 
-Supported environment variables include:
+```bash
+python -m venv venv
+```
 
-- `ALPACA_API_KEY`
-- `ALPACA_API_SECRET`
-- `ALPACA_DATA_BASE_URL`
-- `ALPACA_TRADING_BASE_URL`
-- `HISTORY_DIR` (default: `.history`)
-- `CACHE_DIR` (default: `.cache`)
-
-This modular design enables:
-- Easy testing of business logic in isolation
-- Multiple entry points (CLI, web UI, API)
-- Clear separation between interface and implementation
-- Maintainable and extensible codebase
-
-## Installation
-
-1. Create and activate a virtual environment.
-2. Install the app dependencies:
+### 2) Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Install the test runner for local unit-test execution:
+### 3) Optionally install the local test runner
 
 ```bash
 pip install pytest
 ```
 
-4. Optionally create `.env` with Alpaca credentials:
+### 4) Run the Streamlit dashboard
 
-```text
-ALPACA_API_KEY=your_api_key
-ALPACA_API_SECRET=your_api_secret
-ALPACA_DATA_BASE_URL=https://data.alpaca.markets
-ALPACA_TRADING_BASE_URL=https://paper-api.alpaca.markets
+```bash
+streamlit run app.py
+```
+
+Then open `http://localhost:8501`.
+
+### 5) Or run the CLI directly
+
+```bash
+python main.py --profile balanced --group tech --alerts-only
 ```
 
 ## Configuration
 
-The `config.yaml` file can define default run parameters:
+The app reads defaults from `config.yaml` and merges them with runtime overrides and environment variables.
+
+Example `config.yaml`:
 
 ```yaml
 profile: balanced
@@ -101,33 +91,44 @@ dte_min: 20
 dte_max: 35
 ```
 
-## Usage
+Optional environment variables:
 
-Run the scanner from the project root:
-
-```bash
-python main.py --profile balanced --group tech --alerts-only
+```text
+ALPACA_API_KEY=your_api_key
+ALPACA_API_SECRET=your_api_secret
+ALPACA_DATA_BASE_URL=https://data.alpaca.markets
+ALPACA_TRADING_BASE_URL=https://paper-api.alpaca.markets
+HISTORY_DIR=.history
+CACHE_DIR=.cache
 ```
 
-Common flags:
+## Common usage patterns
 
-- `--profile <name>` — choose one of `conservative`, `balanced`, `aggressive`
-- `--group <name>` — choose one of `tech`, `index`, `mixed`
-- `--tickers <T1,T2,...>` — override ticker list manually
-- `--alerts-only` — output only alert data as JSON
-- `--compact` — print a compact summary report
-- `--explain-score` — print detailed scoring explanations
-- `--daily-summary` — print a human-readable daily summary
-- `--export-csv` — save alerts to `exports/alerts_latest.csv`
-- `--trend-insights` — print historical trend insights from `.history`
-
-Run the Streamlit dashboard:
+### Streamlit UI
 
 ```bash
 streamlit run app.py
 ```
 
-## Docker usage
+### Alerts-only JSON output
+
+```bash
+python main.py --profile balanced --group tech --alerts-only
+```
+
+### Human-readable daily summary
+
+```bash
+python main.py --profile balanced --group tech --daily-summary
+```
+
+### Export alerts to CSV
+
+```bash
+python main.py --profile balanced --group tech --export-csv
+```
+
+## Docker and local container runs
 
 Build the image:
 
@@ -135,55 +136,38 @@ Build the image:
 docker build -t options-trading-app .
 ```
 
-Run the Streamlit UI:
+Run the UI:
 
 ```bash
 docker run --rm -p 8501:8501 options-trading-app
 ```
 
-Then open `http://localhost:8501` in your browser.
-
-Run the CLI entry point inside the container:
+Run with Compose (recommended for local consistency):
 
 ```bash
-docker run --rm options-trading-app python main.py --profile balanced --group tech --alerts-only
+docker compose up --build
 ```
 
-Pass runtime environment variables with `--env-file` or `-e`:
+If you want to preserve history and cache between runs, keep the mounted data directories in place and/or provide `.env` values as needed.
 
-```bash
-docker run --rm --env-file .env options-trading-app python main.py --trend-insights
-```
+## Project structure
 
-```bash
-docker run --rm -p 8501:8501 \
-  -e ALPACA_API_KEY=your_api_key \
-  -e ALPACA_API_SECRET=your_api_secret \
-  options-trading-app
-```
+- `app.py` — Streamlit UI and presentation logic
+- `engine.py` — core scan engine and business rules
+- `ui/` — focused rendering helpers for alerts and qualified trades
+- `main.py` — CLI entry point
+- `settings.py` — runtime configuration resolution
+- `data_provider.py` — market data access and provider fallback behavior
+- `history.py` / `history_reader.py` — persistence and trend/stability context
+- `output.py` — output formatting and export helpers
 
-To persist history and cache across container runs, mount host directories and point `HISTORY_DIR` and `CACHE_DIR` at them:
+## Default ticker groups
 
-```bash
-docker run --rm -p 8501:8501 \
-  -e HISTORY_DIR=/data/history \
-  -e CACHE_DIR=/data/cache \
-  -v ./docker-data/history:/data/history \
-  -v ./docker-data/cache:/data/cache \
-  options-trading-app
-```
+- `tech`: `NVDA`, `TSLA`, `META`, `AAPL`, `MSFT`
+- `index`: `SPY`, `QQQ`, `IWM`
+- `mixed`: `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`
 
-## Testing
-
-### Unit testing strategy
-
-The project uses a lightweight `pytest` suite focused on deterministic business-logic validation rather than live brokerage integration.
-
-- `test_data_provider.py` covers provider fallback behavior, missing ticker reporting, and contract normalization/validation helpers.
-- `test_engine.py` covers ticker-level regression checks for spread availability, selected legs, and final quality labels.
-- Unit tests should prefer pure functions and stable regression scenarios over UI automation or live network calls.
-- Mock/fallback market data is the default test path; CI forces `ALPACA_API_KEY` and `ALPACA_API_SECRET` to blank values so test runs stay repeatable.
-- If Alpaca credentials are present locally, the fallback-specific provider test may skip itself by design.
+## Testing and validation
 
 Run the unit suite locally:
 
@@ -191,51 +175,24 @@ Run the unit suite locally:
 python -m pytest -q
 ```
 
-For Windows PowerShell, you can mirror the CI-style no-credentials mode with:
+For a lightweight source validation pass:
 
-```powershell
-$env:ALPACA_API_KEY=""
-$env:ALPACA_API_SECRET=""
-python -m pytest -q
+```bash
+python -m compileall .
 ```
 
-### CI validation
+The current CI flow validates:
 
-GitHub Actions currently validates:
-
-- the Python unit test suite
-- a Docker image build using the existing `Dockerfile`
-- no registry push or deployment steps yet
-
-### Guidelines for adding tests
-
-1. Keep tests near the current repo layout using `test_*.py` files at the project root.
-2. Assert user-visible outcomes such as provider choice, spread availability, chosen strikes, and spread labels.
-3. Avoid depending on live Alpaca responses for unit coverage.
-4. Keep fixtures small, readable, and compatible with the existing project structure.
-
-## Ticker groups
-
-The project includes these ticker groups by default:
-
-- `tech`: `NVDA`, `TSLA`, `META`, `AAPL`, `MSFT`
-- `index`: `SPY`, `QQQ`, `IWM`
-- `mixed`: `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`
-
-## How scoring works
-
-- `POP` is derived from the selected short option delta.
-- `ROR` is computed with net credit relative to maximum risk.
-- Spread quality is determined by threshold rules, including open interest and strike sanity.
-- Qualified spreads are labeled `High Quality`, `Near Miss`, or `Rejected`.
-- The system applies consistency and volatility adjustments before ranking.
+- Python source compilation
+- unit tests with `pytest`
+- Docker image buildability with the existing `Dockerfile`
 
 ## Notes
 
-- Market data is cached under `.cache` by default, or under `CACHE_DIR` if provided.
-- Historical scans are appended to `.history/run_<date>.jsonl` by default, or under `HISTORY_DIR` if provided.
-- If Alpaca credentials are missing, the app uses built-in mock option data.
-- Local `.env` loading is optional; runtime environment variables from Docker or CI/CD are supported.
+- Historical scans are stored under `.history`
+- Market-data cache is stored under `.cache`
+- If Alpaca credentials are missing, the app falls back to mock data for development/testing
+- The UI is designed to help review opportunities, not to execute orders
 
 ## License
 
