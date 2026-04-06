@@ -286,7 +286,15 @@ def render_trend_insights():
 
     st.subheader("Trend Insights")
 
-    st.markdown(f"**Runs analyzed:** {insights.get('runs_analyzed', 0)}")
+    runs_analyzed = insights.get('runs_analyzed', 0)
+    st.markdown(f"**Runs analyzed:** {runs_analyzed}")
+
+    if runs_analyzed == 0:
+        with st.container(border=True):
+            st.info(
+                "No history yet. Run a few scans to start building recurring-pattern and stability context."
+            )
+        return
 
     col1, col2, col3 = st.columns(3)
 
@@ -326,6 +334,10 @@ def render_daily_summary(output):
     profile = output.get("profile")
     ticker_group = output.get("ticker_group")
     execution_time = output.get("execution_time_seconds")
+    provider_errors = output.get("provider_errors", []) or []
+    missing_tickers = output.get("missing_tickers", []) or []
+    qualified_count = summary.get("qualified_count", len(qualified))
+    alerts_count = len(alerts)
 
     stable_alerts = [s for s in alerts if s.get("stability_level") == "stable"]
     emerging_alerts = [s for s in alerts if s.get("stability_level") == "emerging"]
@@ -339,6 +351,31 @@ def render_daily_summary(output):
         )
 
     st.subheader("Daily Summary")
+
+    summary_notice = None
+    notice_type = None
+    if provider_errors:
+        summary_notice = (
+            "This summary reflects a run with provider issues, so missing opportunities may be data-related."
+        )
+        notice_type = "warning"
+    elif missing_tickers:
+        summary_notice = (
+            f"This summary reflects partial coverage: {len(missing_tickers)} ticker(s) were unavailable during the scan."
+        )
+        notice_type = "info"
+    elif qualified_count == 0 and alerts_count == 0:
+        summary_notice = (
+            "This was a healthy run, but no strong opportunities cleared the current thresholds."
+        )
+        notice_type = "info"
+
+    if summary_notice:
+        with st.container(border=True):
+            if notice_type == "warning":
+                st.warning(summary_notice)
+            else:
+                st.info(summary_notice)
 
     with st.container(border=True):
         st.markdown("### Run Context")
@@ -457,10 +494,19 @@ if run_button:
             col6.metric("POP Weight", scoring_weights.get("pop_weight"))
 
     with tab_alerts:
-        render_alerts(alerts)
+        render_alerts(
+            alerts,
+            provider_errors=output.get("provider_errors"),
+            missing_tickers=output.get("missing_tickers"),
+            qualified_count=summary.get("qualified_count", len(qualified)),
+        )
 
     with tab_qualified:
-        render_qualified_trades(qualified)
+        render_qualified_trades(
+            qualified,
+            provider_errors=output.get("provider_errors"),
+            missing_tickers=output.get("missing_tickers"),
+        )
 
     with tab_history:
         render_trend_insights()

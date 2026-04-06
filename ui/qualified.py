@@ -10,16 +10,43 @@ from ui.components import (
 )
 
 
-def render_qualified_trades(qualified):
+def render_qualified_trades(qualified, provider_errors=None, missing_tickers=None):
     """Render the qualified trades list with summary and detailed cards.
     
     Args:
         qualified: List of qualified trade dictionaries from engine
+        provider_errors: Optional list of provider issues from the current run
+        missing_tickers: Optional list of missing tickers from the current run
     """
     st.subheader("Qualified Trades")
 
+    provider_errors = provider_errors or []
+    missing_tickers = missing_tickers or []
+    missing_count = len(missing_tickers)
+
+    if qualified:
+        if provider_errors:
+            st.warning(
+                "Qualified trades are shown below, but provider issues may have limited overall coverage."
+            )
+        elif missing_count > 0:
+            st.info(
+                f"Qualified trades are shown below, but {missing_count} ticker(s) were unavailable during the scan."
+            )
+
     if not qualified:
-        st.warning("No qualified trades matched the current settings.")
+        if provider_errors:
+            st.warning(
+                "No qualified trades were returned because provider issues affected the run. Review the Overview tab before acting on the absence of candidates."
+            )
+        elif missing_count > 0:
+            st.warning(
+                f"No qualified trades were returned and {missing_count} ticker(s) were unavailable, so coverage was partial."
+            )
+        else:
+            st.info(
+                "No trades qualified under the current filters. This can be a healthy outcome when market conditions are weak or premiums are not attractive."
+            )
         st.caption("Try adjusting profile, DTE range, minimum score, or consistency threshold.")
         return
 
