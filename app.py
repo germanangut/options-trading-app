@@ -84,6 +84,183 @@ def run_scan(profile, ticker_group, dte_min, dte_max, min_score, min_consistency
     )
 
 
+def get_trade_value(primary_spread, fallback_spread, key, default=None):
+    """Prefer the summary trade value, then fall back to the top qualified trade."""
+    if primary_spread and primary_spread.get(key) not in (None, ""):
+        return primary_spread.get(key)
+
+    if fallback_spread and fallback_spread.get(key) not in (None, ""):
+        return fallback_spread.get(key)
+
+    score_breakdown = (fallback_spread or {}).get("score_breakdown", {})
+    if score_breakdown.get(key) not in (None, ""):
+        return score_breakdown.get(key)
+
+    return default
+
+
+def get_opportunity_label(spread):
+    """Return a lightweight presentation label based on the engine-provided score."""
+    score = spread.get("adjusted_score") if spread else None
+
+    if score is None:
+        return "Opportunity available"
+    if score >= 70:
+        return "Strong opportunity"
+    if score >= 60:
+        return "Moderate opportunity"
+    return "Weak opportunity"
+
+
+def render_top_decision_panel(spread, qualified_count, fallback_spread=None):
+    """Render a presentation-only summary for the best current trade."""
+    st.subheader("Top Decision")
+
+    if not spread and not fallback_spread:
+        with st.container(border=True):
+            st.info("No qualified trades were returned for this run.")
+            st.caption(
+                "Try widening the DTE range or lowering the minimum score/consistency thresholds."
+            )
+        return
+
+    primary_trade = spread or fallback_spread or {}
+    detail_trade = fallback_spread or primary_trade
+    opportunity_label = get_opportunity_label(primary_trade)
+
+    with st.container(border=True):
+        st.markdown(
+            f"### {get_trade_value(primary_trade, detail_trade, 'ticker', 'N/A')} | "
+            f"{get_trade_value(primary_trade, detail_trade, 'strategy_type', 'Trade')}"
+        )
+
+        summary_text = (
+            f"{qualified_count} qualified trade(s) identified in this run. "
+            f"Current assessment: {opportunity_label}."
+        )
+
+        if opportunity_label == "Strong opportunity":
+            st.success(summary_text)
+        elif opportunity_label == "Moderate opportunity":
+            st.info(summary_text)
+        else:
+            st.warning(summary_text)
+
+        render_metric_row(primary_trade)
+
+        col1, col2, col3 = st.columns(3)
+        col1.metric(
+            "Stability Level",
+            get_trade_value(primary_trade, detail_trade, "stability_level", "n/a"),
+        )
+        col2.metric(
+            "Stability Count",
+            get_trade_value(primary_trade, detail_trade, "stability_count", 0),
+        )
+        col3.metric("Opportunity", opportunity_label)
+
+        st.markdown(
+            "**Volatility Context:** "
+            f"{get_trade_value(primary_trade, detail_trade, 'volatility_context', 'n/a')}"
+        )
+
+        status_reason = get_trade_value(
+            primary_trade,
+            detail_trade,
+            "status_reason",
+            "No status reason provided.",
+        )
+        st.markdown(f"**Status Reason:** {status_reason}")
+
+        st.markdown("#### Decision Summary")
+        st.write(
+            get_trade_value(
+                primary_trade,
+                detail_trade,
+                "decision_summary",
+                "No decision summary available.",
+            )
+        )
+
+
+def render_system_signals(output):
+    """Render compact system and scan-quality indicators from engine metadata."""
+    st.subheader("System Signals")
+
+    provider = output.get("provider") or "n/a"
+    execution_time = output.get("execution_time_seconds")
+    missing_tickers = output.get("missing_tickers") or []
+    provider_errors = output.get("provider_errors") or []
+    summary = output.get("summary", {})
+    alerts = output.get("alerts") or []
+    qualified = output.get("qualified") or []
+
+    missing_count = len(missing_tickers)
+    provider_error_count = len(provider_errors)
+    qualified_count = summary.get("qualified_count", len(qualified))
+    alerts_count = len(alerts)
+
+    if provider_error_count > 0:
+        health_message = "Provider issues detected. Treat this run as partially incomplete."
+        health_type = "error"
+    elif missing_count > 0:
+        health_message = "Partial data coverage, interpret carefully."
+        health_type = "warning"
+    elif qualified_count > 0 or alerts_count > 0:
+        health_message = "Healthy run with actionable candidates."
+        health_type = "success"
+    else:
+        health_message = "Healthy run with no strong candidates."
+        health_type = "info"
+
+    with st.container(border=True):
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Provider", provider)
+        col2.metric(
+            "Execution Time",
+            f"{execution_time:.2f}s" if isinstance(execution_time, (int, float)) else "n/a",
+        )
+        col3.metric("Missing Tickers", missing_count)
+
+        col4, col5, col6 = st.columns(3)
+        col4.metric("Provider Errors", provider_error_count)
+        col5.metric("Qualified Trades", qualified_count)
+        col6.metric("Alerts", alerts_count)
+
+        if health_type == "error":
+            st.error(health_message)
+        elif health_type == "warning":
+            st.warning(health_message)
+        elif health_type == "success":
+            st.success(health_message)
+        else:
+            st.info(health_message)
+
+
+def render_trade_lifecycle():
+    """Show the user how to move through the existing app workflow."""
+    st.subheader("Trade Lifecycle")
+
+    with st.container(border=True):
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            st.markdown("### 1. Scan")
+            st.caption("Use **Alerts** to review fresh opportunities returned by the current run.")
+
+        with col2:
+            st.markdown("### 2. Select")
+            st.caption("Use **Qualified Trades** to focus on the strongest current candidates.")
+
+        with col3:
+            st.markdown("### 3. Track")
+            st.caption("Use **History** to understand recurring patterns and stability over time.")
+
+        with col4:
+            st.markdown("### 4. Outcome")
+            st.caption("Use **Daily Summary** for the run-level interpretation and takeaways.")
+
+
 def render_trade_card(title, spread):
     if not spread:
         st.info(f"No {title.lower()} available.")
@@ -253,6 +430,14 @@ if run_button:
         )
 
     with tab_overview:
+        render_top_decision_panel(
+            top_overall,
+            summary.get("qualified_count", len(qualified)),
+            qualified[0] if qualified else None,
+        )
+        render_system_signals(output)
+        render_trade_lifecycle()
+
         with st.expander("Run Metadata", expanded=True):
             col1, col2, col3 = st.columns(3)
             col1.metric("Execution Time", output.get("execution_time_seconds"))
@@ -270,8 +455,6 @@ if run_button:
             )
             col5.metric("Min Score", alert_thresholds.get("min_score"))
             col6.metric("POP Weight", scoring_weights.get("pop_weight"))
-
-        render_trade_card("Top Overall", top_overall)
 
     with tab_alerts:
         render_alerts(alerts)
