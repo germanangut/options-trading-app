@@ -112,6 +112,46 @@ def get_opportunity_label(spread):
     return "Weak opportunity"
 
 
+def render_why_this_trade(primary_trade, detail_trade):
+    """Render a concise explanation of why the highlighted trade surfaced."""
+    adjusted_score = get_trade_value(primary_trade, detail_trade, "adjusted_score", "n/a")
+    pop = get_trade_value(primary_trade, detail_trade, "POP", "n/a")
+    ror = get_trade_value(primary_trade, detail_trade, "ROR", "n/a")
+    stability_level = get_trade_value(primary_trade, detail_trade, "stability_level", "n/a")
+    stability_count = get_trade_value(primary_trade, detail_trade, "stability_count", 0)
+    volatility_context = get_trade_value(primary_trade, detail_trade, "volatility_context", "n/a")
+    status_reason = get_trade_value(
+        primary_trade,
+        detail_trade,
+        "status_reason",
+        "No status reason provided.",
+    )
+    decision_summary = get_trade_value(
+        primary_trade,
+        detail_trade,
+        "decision_summary",
+        "No decision summary available.",
+    )
+
+    with st.container(border=True):
+        st.markdown("#### Why This Trade")
+
+        col1, col2 = st.columns(2)
+        with col1:
+            st.markdown("**Supportive Signals**")
+            st.write(f"- Adjusted score: {adjusted_score}")
+            st.write(f"- POP / ROR: {pop} / {ror}")
+            st.write(f"- Stability: {stability_level} ({stability_count})")
+
+        with col2:
+            st.markdown("**Context to Watch**")
+            st.write(f"- Premium context: {volatility_context}")
+            st.write(f"- Qualification note: {status_reason}")
+
+        st.markdown("**Decision View**")
+        st.write(decision_summary)
+
+
 def render_top_decision_panel(spread, qualified_count, fallback_spread=None):
     """Render a presentation-only summary for the best current trade."""
     st.subheader("Top Decision")
@@ -159,28 +199,7 @@ def render_top_decision_panel(spread, qualified_count, fallback_spread=None):
         )
         col3.metric("Opportunity", opportunity_label)
 
-        st.markdown(
-            "**Volatility Context:** "
-            f"{get_trade_value(primary_trade, detail_trade, 'volatility_context', 'n/a')}"
-        )
-
-        status_reason = get_trade_value(
-            primary_trade,
-            detail_trade,
-            "status_reason",
-            "No status reason provided.",
-        )
-        st.markdown(f"**Status Reason:** {status_reason}")
-
-        st.markdown("#### Decision Summary")
-        st.write(
-            get_trade_value(
-                primary_trade,
-                detail_trade,
-                "decision_summary",
-                "No decision summary available.",
-            )
-        )
+        render_why_this_trade(primary_trade, detail_trade)
 
 
 def render_system_signals(output):
