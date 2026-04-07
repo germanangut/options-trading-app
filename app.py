@@ -2,6 +2,7 @@
 from pathlib import Path
 from engine import run_scan_engine
 from history import compute_trend_insights
+from strategies import get_active_strategies
 from ui.components import (
     render_metric_row,
     render_trade_header,
@@ -34,6 +35,23 @@ ticker_group = st.sidebar.selectbox(
     ["tech", "index", "mixed"],
     index=0,
 )
+
+active_strategies = get_active_strategies()
+active_strategy_keys = [strategy["key"] for strategy in active_strategies]
+strategy_label_lookup = {
+    strategy["key"]: strategy.get("display_label", strategy["key"]).replace("_", " ").title()
+    for strategy in active_strategies
+}
+
+selected_strategy_keys = st.sidebar.multiselect(
+    "Strategies",
+    options=active_strategy_keys,
+    default=active_strategy_keys,
+    format_func=lambda key: strategy_label_lookup.get(key, key),
+)
+
+if not selected_strategy_keys:
+    selected_strategy_keys = active_strategy_keys
 
 st.sidebar.subheader("Advanced Controls")
 
@@ -72,7 +90,15 @@ min_consistency = st.sidebar.number_input(
 run_button = st.sidebar.button("Run Scan")
 
 
-def run_scan(profile, ticker_group, dte_min, dte_max, min_score, min_consistency):
+def run_scan(
+    profile,
+    ticker_group,
+    dte_min,
+    dte_max,
+    min_score,
+    min_consistency,
+    selected_strategy_keys,
+):
     return run_scan_engine(
         profile_name=profile,
         group_name=ticker_group,
@@ -81,6 +107,7 @@ def run_scan(profile, ticker_group, dte_min, dte_max, min_score, min_consistency
         min_score=min_score,
         min_consistency=min_consistency,
         export_csv=False,
+        selected_strategy_keys=selected_strategy_keys,
     )
 
 
@@ -481,6 +508,7 @@ if run_button:
             dte_max,
             min_score,
             min_consistency,
+            selected_strategy_keys,
         )
 
     st.subheader("Execution Status")
@@ -503,7 +531,7 @@ if run_button:
         
         render_top_decision_panel(
             top_overall,
-            summary.get("qualified_count", len(qualified)),
+            summary.get("qualified_count", len(qualified)), 
             qualified[0] if qualified else None,
         )
         render_system_boundaries()

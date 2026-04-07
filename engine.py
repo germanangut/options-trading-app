@@ -14,16 +14,44 @@ from strategies import (
     BEAR_CALL_SPREAD,
     BULL_PUT_SPREAD,
     apply_strategy_metadata,
+    get_active_strategies,
+    get_strategy,
 )
 from ticker_groups import TICKER_GROUPS
 
 
-def process_ticker(ticker, ticker_data, pop_weight, ror_weight):
+def resolve_selected_strategy_keys(selected_strategy_keys=None):
+    active_strategy_keys = [strategy["key"] for strategy in get_active_strategies()]
+
+    if not selected_strategy_keys:
+        return active_strategy_keys
+
+    resolved_keys = []
+    for strategy_key in selected_strategy_keys:
+        strategy = get_strategy(strategy_key)
+        if strategy is None:
+            continue
+
+        resolved_key = strategy["key"]
+        if resolved_key in active_strategy_keys and resolved_key not in resolved_keys:
+            resolved_keys.append(resolved_key)
+
+    return resolved_keys or active_strategy_keys
+
+
+def process_ticker(
+    ticker,
+    ticker_data,
+    pop_weight,
+    ror_weight,
+    selected_strategy_keys=None,
+):
     contracts = ticker_data["contracts"]
     underlying_price = ticker_data["underlying_price"]
     expiration_date = ticker_data["expiration_date"]
     dte = ticker_data["DTE"]
     provider_diagnostics = ticker_data.get("provider_diagnostics", {})
+    selected_strategy_keys = set(resolve_selected_strategy_keys(selected_strategy_keys))
 
     if not contracts:
         return {
@@ -46,38 +74,43 @@ def process_ticker(ticker, ticker_data, pop_weight, ror_weight):
     short_call = select_leg(contracts, target_delta=0.30, option_type="call")
     long_call = select_leg(contracts, target_delta=0.20, option_type="call")
 
-    bull_put_spread = build_spread(
-        short_leg=short_put,
-        long_leg=long_put,
-        strategy_type=BULL_PUT_SPREAD["display_label"],
-        ticker=ticker,
-        underlying_price=underlying_price,
-        expiration_date=expiration_date,
-        dte=dte,
-    )
+    bull_put_spread = None
+    if BULL_PUT_SPREAD["key"] in selected_strategy_keys:
+        bull_put_spread = build_spread(
+            short_leg=short_put,
+            long_leg=long_put,
+            strategy_type=BULL_PUT_SPREAD["display_label"],
+            ticker=ticker,
+            underlying_price=underlying_price,
+            expiration_date=expiration_date,
+            dte=dte,
+        )
+        bull_put_spread = classify_spread(
+            evaluate_spread(bull_put_spread, pop_weight=pop_weight, ror_weight=ror_weight)
+        )
+        bull_put_spread = apply_strategy_metadata(
+            bull_put_spread,
+            BULL_PUT_SPREAD["key"],
+        )
 
-    bear_call_spread = build_spread(
-        short_leg=short_call,
-        long_leg=long_call,
-        strategy_type=BEAR_CALL_SPREAD["display_label"],
-        ticker=ticker,
-        underlying_price=underlying_price,
-        expiration_date=expiration_date,
-        dte=dte,
-    )
-
-    bull_put_spread = classify_spread(
-        evaluate_spread(bull_put_spread, pop_weight=pop_weight, ror_weight=ror_weight)
-    )
-    bear_call_spread = classify_spread(
-        evaluate_spread(bear_call_spread, pop_weight=pop_weight, ror_weight=ror_weight)
-    )
-
-    bull_put_spread = apply_strategy_metadata(bull_put_spread, BULL_PUT_SPREAD["key"])
-    bear_call_spread = apply_strategy_metadata(
-        bear_call_spread,
-        BEAR_CALL_SPREAD["key"],
-    )
+    bear_call_spread = None
+    if BEAR_CALL_SPREAD["key"] in selected_strategy_keys:
+        bear_call_spread = build_spread(
+            short_leg=short_call,
+            long_leg=long_call,
+            strategy_type=BEAR_CALL_SPREAD["display_label"],
+            ticker=ticker,
+            underlying_price=underlying_price,
+            expiration_date=expiration_date,
+            dte=dte,
+        )
+        bear_call_spread = classify_spread(
+            evaluate_spread(bear_call_spread, pop_weight=pop_weight, ror_weight=ror_weight)
+        )
+        bear_call_spread = apply_strategy_metadata(
+            bear_call_spread,
+            BEAR_CALL_SPREAD["key"],
+        )
 
     return {
         "ticker": ticker,
@@ -137,6 +170,7 @@ def run_scan_engine(
     pop_weight=None,
     ror_weight=None,
     export_csv=False,
+    selected_strategy_keys=None,
 ):
     settings = get_settings(
         {
@@ -163,6 +197,7 @@ def run_scan_engine(
     min_consistency = settings.get("min_consistency", min_consistency)
     dte_min = settings.get("dte_min", dte_min)
     dte_max = settings.get("dte_max", dte_max)
+    selected_strategy_keys = resolve_selected_strategy_keys(selected_strategy_keys)
 
     overall_start = time.time()
 
@@ -191,6 +226,7 @@ def run_scan_engine(
                 data[ticker],
                 pop_weight,
                 ror_weight,
+                selected_strategy_keys,
             )
             futures[future] = ticker
 
@@ -230,6 +266,7 @@ def run_scan_engine(
     filtered["execution_time_seconds"] = round(time.time() - overall_start, 2)
     filtered["profile"] = effective_profile_name
     filtered["ticker_group"] = effective_group_name
+    filtered["selected_strategy_keys"] = list(selected_strategy_keys)
     filtered["scoring_weights"] = {
         "pop_weight": pop_weight,
         "ror_weight": ror_weight,
