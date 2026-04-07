@@ -1,7 +1,7 @@
 
 from pathlib import Path
 from engine import run_scan_engine
-from history import compute_trend_insights
+from history import compute_trend_insights, compute_historical_signal_quality_summary
 from strategies import get_active_strategies
 from ui.components import (
     render_metric_row,
@@ -9,6 +9,7 @@ from ui.components import (
     render_stability_block,
     render_decision_summary,
     render_json_expander,
+    get_strategy_display_name,
 )
 from ui.qualified import render_qualified_trades
 from ui.alerts import render_alerts
@@ -283,6 +284,136 @@ def render_system_signals(output):
             st.info(health_message)
 
 
+def _normalize_history_value(value):
+    return str(value or "").strip().replace("_", " ").lower()
+
+
+def _find_history_row(rows, key_name, *candidates):
+    normalized_candidates = {
+        _normalize_history_value(candidate)
+        for candidate in candidates
+        if candidate not in (None, "")
+    }
+
+    if not normalized_candidates:
+        return None
+
+    for row in rows or []:
+        if _normalize_history_value(row.get(key_name)) in normalized_candidates:
+            return row
+
+    return None
+
+
+def render_historical_signal_context(primary_trade, fallback_trade=None):
+    """Render concise, non-predictive context from stored signal history."""
+    st.subheader("Historical Signal Context")
+
+    if not primary_trade and not fallback_trade:
+        with st.container(border=True):
+            st.info("Historical context becomes available once a current top decision is present.")
+        return
+
+    detail_trade = fallback_trade or primary_trade or {}
+    ticker = get_trade_value(primary_trade, detail_trade, "ticker", "N/A")
+    raw_strategy = (
+        get_trade_value(primary_trade, detail_trade, "strategy_label")
+        or get_trade_value(primary_trade, detail_trade, "strategy_type")
+        or get_trade_value(primary_trade, detail_trade, "strategy_key")
+        or "Trade"
+    )
+    strategy_name = get_strategy_display_name(detail_trade or raw_strategy, default="Trade")
+
+    history_summary = compute_historical_signal_quality_summary(limit=25)
+    runs_analyzed = history_summary.get("runs_analyzed", 0)
+    signals_analyzed = history_summary.get("signals_analyzed", 0)
+
+    if runs_analyzed == 0 or signals_analyzed == 0:
+        with st.container(border=True):
+            st.info(
+                "Stored scan history is still limited. Run a few more scans to build additional context."
+            )
+        return
+
+    ticker_row = _find_history_row(
+        history_summary.get("most_frequent_qualified_tickers", []),
+        "ticker",
+        ticker,
+    )
+    strategy_row = _find_history_row(
+        history_summary.get("most_frequent_qualified_strategies", []),
+        "strategy",
+        strategy_name,
+        raw_strategy,
+    )
+    ticker_score_row = _find_history_row(
+        history_summary.get("average_adjusted_score_by_ticker", []),
+        "ticker",
+        ticker,
+    )
+    strategy_score_row = _find_history_row(
+        history_summary.get("average_adjusted_score_by_strategy", []),
+        "strategy",
+        strategy_name,
+        raw_strategy,
+    )
+    pattern_row = _find_history_row(
+        history_summary.get("recurring_high_quality_patterns", []),
+        "pattern",
+        f"{ticker} | {strategy_name}",
+        f"{ticker} | {raw_strategy}",
+    )
+
+    with st.container(border=True):
+        st.caption(
+            "Uses stored scan history for context only. It does not estimate future outcomes or guarantee signal quality."
+        )
+
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Runs Analyzed", runs_analyzed)
+        col2.metric(
+            f"{ticker} Recurrence",
+            ticker_row.get("count", "Limited") if ticker_row else "Limited",
+        )
+        col3.metric(
+            "Strategy Recurrence",
+            strategy_row.get("count", "Limited") if strategy_row else "Limited",
+        )
+
+        historical_average = None
+        historical_average_basis = None
+        if ticker_score_row:
+            historical_average = ticker_score_row.get("average_adjusted_score")
+            historical_average_basis = f"{ticker} history"
+        elif strategy_score_row:
+            historical_average = strategy_score_row.get("average_adjusted_score")
+            historical_average_basis = f"{strategy_name} history"
+
+        col4.metric(
+            "Hist. Avg Score",
+            historical_average if historical_average is not None else "Limited",
+        )
+
+        notes = []
+        if pattern_row:
+            notes.append(
+                f"This ticker/strategy combination has appeared **{pattern_row.get('count', 0)}** time(s) in stored high-quality history."
+            )
+
+        if historical_average is not None and historical_average_basis:
+            notes.append(
+                f"Average adjusted score across **{historical_average_basis}**: **{historical_average}**."
+            )
+
+        if not notes:
+            notes.append(
+                f"Stored history for **{ticker} | {strategy_name}** is still limited, so use the current run details as the primary input."
+            )
+
+        for note in notes[:2]:
+            st.write(f"- {note}")
+
+
 def render_trade_lifecycle():
     """Show the user how to move through the existing app workflow."""
     st.subheader("Trade Lifecycle")
@@ -532,6 +663,10 @@ if run_button:
         render_top_decision_panel(
             top_overall,
             summary.get("qualified_count", len(qualified)), 
+            qualified[0] if qualified else None,
+        )
+        render_historical_signal_context(
+            top_overall,
             qualified[0] if qualified else None,
         )
         render_system_boundaries()
