@@ -62,6 +62,8 @@ def _compact_signal_record(spread):
         "ROR": spread.get("ROR"),
         "label": spread.get("label"),
         "volatility_context": spread.get("volatility_context"),
+        "stability_level": spread.get("stability_level"),
+        "stability_count": spread.get("stability_count"),
         "status_reason": spread.get("status_reason"),
         "decision_summary": spread.get("decision_summary"),
     }
@@ -213,8 +215,14 @@ def _build_average_summary(score_map, key_name, limit=5):
     return rows[:limit]
 
 
-def compute_historical_signal_quality_summary(limit=5):
-    """Compute a lightweight historical summary of signal quality from stored runs."""
+def _build_count_summary(counter, key_name, limit=5):
+    return [
+        {key_name: name, "count": count}
+        for name, count in counter.most_common(limit)
+    ]
+
+
+def _compute_historical_intelligence_components(limit=5):
     runs = load_all_history_runs(include_fallback_dirs=True)
 
     ticker_counter = Counter()
@@ -222,10 +230,14 @@ def compute_historical_signal_quality_summary(limit=5):
     label_counter = Counter()
     pattern_counter = Counter()
     source_counter = Counter()
+    volatility_context_counter = Counter()
+    stability_level_counter = Counter()
 
     scores_by_ticker = defaultdict(list)
     scores_by_strategy = defaultdict(list)
     scores_by_pattern = defaultdict(list)
+    scores_by_volatility_context = defaultdict(list)
+    scores_by_stability_level = defaultdict(list)
 
     signals_analyzed = 0
 
@@ -245,6 +257,8 @@ def compute_historical_signal_quality_summary(limit=5):
             )
             label = signal.get("label")
             adjusted_score = signal.get("adjusted_score")
+            volatility_context = signal.get("volatility_context")
+            stability_level = signal.get("stability_level")
 
             if ticker:
                 ticker_counter[ticker] += 1
@@ -255,11 +269,23 @@ def compute_historical_signal_quality_summary(limit=5):
             if label:
                 label_counter[label] += 1
 
+            if volatility_context:
+                volatility_context_counter[volatility_context] += 1
+
+            if stability_level:
+                stability_level_counter[stability_level] += 1
+
             if isinstance(adjusted_score, (int, float)):
+                score_value = float(adjusted_score)
+
                 if ticker:
-                    scores_by_ticker[ticker].append(float(adjusted_score))
+                    scores_by_ticker[ticker].append(score_value)
                 if strategy:
-                    scores_by_strategy[strategy].append(float(adjusted_score))
+                    scores_by_strategy[strategy].append(score_value)
+                if volatility_context:
+                    scores_by_volatility_context[volatility_context].append(score_value)
+                if stability_level:
+                    scores_by_stability_level[stability_level].append(score_value)
 
             if ticker and strategy:
                 pattern = f"{ticker} | {strategy}"
@@ -286,18 +312,58 @@ def compute_historical_signal_quality_summary(limit=5):
         if len(recurring_patterns) >= limit:
             break
 
-    return {
+    feature_summary = {
+        "counts_by_volatility_context": _build_count_summary(
+            volatility_context_counter,
+            "volatility_context",
+            limit=limit,
+        ),
+        "average_adjusted_score_by_volatility_context": _build_average_summary(
+            scores_by_volatility_context,
+            "volatility_context",
+            limit=limit,
+        ),
+        "counts_by_stability_level": _build_count_summary(
+            stability_level_counter,
+            "stability_level",
+            limit=limit,
+        ),
+        "average_adjusted_score_by_stability_level": _build_average_summary(
+            scores_by_stability_level,
+            "stability_level",
+            limit=limit,
+        ),
+        "recurring_ticker_strategy_pairs": recurring_patterns,
+        "average_adjusted_score_by_ticker_strategy_pair": _build_average_summary(
+            scores_by_pattern,
+            "pair",
+            limit=limit,
+        ),
+    }
+
+    metadata = {
         "runs_analyzed": len(runs),
         "signals_analyzed": signals_analyzed,
         "data_sources": dict(source_counter),
-        "most_frequent_qualified_tickers": [
-            {"ticker": ticker, "count": count}
-            for ticker, count in ticker_counter.most_common(limit)
-        ],
-        "most_frequent_qualified_strategies": [
-            {"strategy": strategy, "count": count}
-            for strategy, count in strategy_counter.most_common(limit)
-        ],
+        "history_available": bool(runs),
+        "signal_history_available": signals_analyzed > 0,
+        "latest_run_timestamp": runs[-1].get("timestamp") if runs else None,
+    }
+
+    signal_quality_summary = {
+        "runs_analyzed": metadata["runs_analyzed"],
+        "signals_analyzed": metadata["signals_analyzed"],
+        "data_sources": metadata["data_sources"],
+        "most_frequent_qualified_tickers": _build_count_summary(
+            ticker_counter,
+            "ticker",
+            limit=limit,
+        ),
+        "most_frequent_qualified_strategies": _build_count_summary(
+            strategy_counter,
+            "strategy",
+            limit=limit,
+        ),
         "average_adjusted_score_by_ticker": _build_average_summary(
             scores_by_ticker,
             "ticker",
@@ -309,11 +375,52 @@ def compute_historical_signal_quality_summary(limit=5):
             limit=limit,
         ),
         "recurring_high_quality_patterns": recurring_patterns,
-        "label_distribution": [
-            {"label": label, "count": count}
-            for label, count in label_counter.most_common(limit)
+        "average_adjusted_score_by_ticker_strategy_pair": feature_summary[
+            "average_adjusted_score_by_ticker_strategy_pair"
         ],
+        "counts_by_volatility_context": feature_summary[
+            "counts_by_volatility_context"
+        ],
+        "average_adjusted_score_by_volatility_context": feature_summary[
+            "average_adjusted_score_by_volatility_context"
+        ],
+        "counts_by_stability_level": feature_summary[
+            "counts_by_stability_level"
+        ],
+        "average_adjusted_score_by_stability_level": feature_summary[
+            "average_adjusted_score_by_stability_level"
+        ],
+        "label_distribution": _build_count_summary(
+            label_counter,
+            "label",
+            limit=limit,
+        ),
+        "feature_summary": feature_summary,
     }
+
+    return {
+        "metadata": metadata,
+        "signal_quality_summary": signal_quality_summary,
+        "feature_summary": feature_summary,
+    }
+
+
+def get_historical_intelligence_summary(limit=5):
+    """Return a consolidated, JSON-serializable summary of historical intelligence."""
+    return _compute_historical_intelligence_components(limit=limit)
+
+
+def compute_historical_signal_quality_summary(limit=5):
+    """Compute a lightweight historical summary of signal quality from stored runs."""
+    return get_historical_intelligence_summary(limit=limit).get(
+        "signal_quality_summary",
+        {},
+    )
+
+
+def compute_historical_signal_feature_summary(limit=5):
+    """Return the structured feature-extraction portion of the historical signal summary."""
+    return get_historical_intelligence_summary(limit=limit).get("feature_summary", {})
 
 def compute_alert_stability():
     runs = load_history_runs()

@@ -1,7 +1,7 @@
 
 from pathlib import Path
 from engine import run_scan_engine
-from history import compute_trend_insights, compute_historical_signal_quality_summary
+from history import compute_trend_insights, get_historical_intelligence_summary
 from strategies import get_active_strategies
 from ui.components import (
     render_metric_row,
@@ -323,10 +323,18 @@ def render_historical_signal_context(primary_trade, fallback_trade=None):
         or "Trade"
     )
     strategy_name = get_strategy_display_name(detail_trade or raw_strategy, default="Trade")
+    volatility_context = get_trade_value(primary_trade, detail_trade, "volatility_context")
+    stability_level = get_trade_value(primary_trade, detail_trade, "stability_level")
 
-    history_summary = compute_historical_signal_quality_summary(limit=25)
-    runs_analyzed = history_summary.get("runs_analyzed", 0)
-    signals_analyzed = history_summary.get("signals_analyzed", 0)
+    intelligence_summary = get_historical_intelligence_summary(limit=25)
+    metadata = intelligence_summary.get("metadata", {})
+    history_summary = intelligence_summary.get("signal_quality_summary", {})
+    feature_summary = intelligence_summary.get("feature_summary", {})
+    runs_analyzed = metadata.get("runs_analyzed", history_summary.get("runs_analyzed", 0))
+    signals_analyzed = metadata.get(
+        "signals_analyzed",
+        history_summary.get("signals_analyzed", 0),
+    )
 
     if runs_analyzed == 0 or signals_analyzed == 0:
         with st.container(border=True):
@@ -363,54 +371,99 @@ def render_historical_signal_context(primary_trade, fallback_trade=None):
         f"{ticker} | {strategy_name}",
         f"{ticker} | {raw_strategy}",
     )
+    pair_score_row = _find_history_row(
+        feature_summary.get("average_adjusted_score_by_ticker_strategy_pair", []),
+        "pair",
+        f"{ticker} | {strategy_name}",
+        f"{ticker} | {raw_strategy}",
+    )
+    volatility_row = _find_history_row(
+        feature_summary.get("counts_by_volatility_context", []),
+        "volatility_context",
+        volatility_context,
+    )
+    volatility_score_row = _find_history_row(
+        feature_summary.get("average_adjusted_score_by_volatility_context", []),
+        "volatility_context",
+        volatility_context,
+    )
+    stability_row = _find_history_row(
+        feature_summary.get("counts_by_stability_level", []),
+        "stability_level",
+        stability_level,
+    )
+    stability_score_row = _find_history_row(
+        feature_summary.get("average_adjusted_score_by_stability_level", []),
+        "stability_level",
+        stability_level,
+    )
 
     with st.container(border=True):
         st.caption(
             "Uses stored scan history for context only. It does not estimate future outcomes or guarantee signal quality."
         )
 
+        similar_signal_average = None
+        if pair_score_row:
+            similar_signal_average = pair_score_row.get("average_adjusted_score")
+        elif ticker_score_row:
+            similar_signal_average = ticker_score_row.get("average_adjusted_score")
+        elif strategy_score_row:
+            similar_signal_average = strategy_score_row.get("average_adjusted_score")
+
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Runs Analyzed", runs_analyzed)
         col2.metric(
-            f"{ticker} Recurrence",
-            ticker_row.get("count", "Limited") if ticker_row else "Limited",
+            "Pair Recurrence",
+            pattern_row.get("count", "Limited") if pattern_row else "Limited",
         )
         col3.metric(
-            "Strategy Recurrence",
-            strategy_row.get("count", "Limited") if strategy_row else "Limited",
+            "Similar Hist. Avg",
+            similar_signal_average if similar_signal_average is not None else "Limited",
         )
-
-        historical_average = None
-        historical_average_basis = None
-        if ticker_score_row:
-            historical_average = ticker_score_row.get("average_adjusted_score")
-            historical_average_basis = f"{ticker} history"
-        elif strategy_score_row:
-            historical_average = strategy_score_row.get("average_adjusted_score")
-            historical_average_basis = f"{strategy_name} history"
-
         col4.metric(
-            "Hist. Avg Score",
-            historical_average if historical_average is not None else "Limited",
+            "Signals Logged",
+            signals_analyzed,
         )
 
-        notes = []
+        context_notes = []
+
         if pattern_row:
-            notes.append(
-                f"This ticker/strategy combination has appeared **{pattern_row.get('count', 0)}** time(s) in stored high-quality history."
+            context_notes.append(
+                f"**{ticker} | {strategy_name}** has appeared **{pattern_row.get('count', 0)}** time(s) in stored high-quality history."
+            )
+        else:
+            context_notes.append(
+                f"Direct history for **{ticker} | {strategy_name}** is still limited, so the current run should remain the primary input."
             )
 
-        if historical_average is not None and historical_average_basis:
-            notes.append(
-                f"Average adjusted score across **{historical_average_basis}**: **{historical_average}**."
-            )
+        if volatility_context and volatility_row:
+            volatility_average = None
+            if volatility_score_row:
+                volatility_average = volatility_score_row.get("average_adjusted_score")
 
-        if not notes:
-            notes.append(
-                f"Stored history for **{ticker} | {strategy_name}** is still limited, so use the current run details as the primary input."
+            message = (
+                f"The current premium context (**{volatility_context.replace('_', ' ')}**) appears in **{volatility_row.get('count', 0)}** stored signal(s)"
             )
+            if volatility_average is not None:
+                message += f", with an average adjusted score of **{volatility_average}**"
+            message += "."
+            context_notes.append(message)
 
-        for note in notes[:2]:
+        if stability_level and stability_row:
+            stability_average = None
+            if stability_score_row:
+                stability_average = stability_score_row.get("average_adjusted_score")
+
+            message = (
+                f"Signals labeled **{stability_level}** appear **{stability_row.get('count', 0)}** time(s) in stored history"
+            )
+            if stability_average is not None:
+                message += f", with an average adjusted score of **{stability_average}**"
+            message += "."
+            context_notes.append(message)
+
+        for note in context_notes[:3]:
             st.write(f"- {note}")
 
 
