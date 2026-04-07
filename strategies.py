@@ -4,7 +4,12 @@ This module keeps strategy metadata centralized and easy to extend without
 changing the existing engine flow or trading logic.
 """
 
-STRATEGY_DEFINITIONS = {
+from copy import deepcopy
+
+from config_loader import load_strategy_config
+
+
+DEFAULT_STRATEGY_DEFINITIONS = {
     "bull_put_spread": {
         "key": "bull_put_spread",
         "display_label": "bull put spread",
@@ -12,6 +17,14 @@ STRATEGY_DEFINITIONS = {
         "directional_bias": "bullish",
         "is_active": True,
         "is_supported": True,
+        "target_deltas": {
+            "short": -0.30,
+            "long": -0.20,
+        },
+        "default_dte": {
+            "min": 20,
+            "max": 35,
+        },
     },
     "bear_call_spread": {
         "key": "bear_call_spread",
@@ -20,8 +33,49 @@ STRATEGY_DEFINITIONS = {
         "directional_bias": "bearish",
         "is_active": True,
         "is_supported": True,
+        "target_deltas": {
+            "short": 0.30,
+            "long": 0.20,
+        },
+        "default_dte": {
+            "min": 20,
+            "max": 35,
+        },
     },
 }
+
+STRATEGY_CONFIG = load_strategy_config()
+
+
+def _build_strategy_definitions():
+    strategy_definitions = deepcopy(DEFAULT_STRATEGY_DEFINITIONS)
+
+    for strategy_key, config in STRATEGY_CONFIG.items():
+        if strategy_key not in strategy_definitions or not isinstance(config, dict):
+            continue
+
+        strategy = strategy_definitions[strategy_key]
+        strategy["key"] = strategy_key
+
+        if "enabled" in config:
+            strategy["is_active"] = bool(config["enabled"])
+        if config.get("display_label"):
+            strategy["display_label"] = config["display_label"]
+        if config.get("family"):
+            strategy["family"] = config["family"]
+        if config.get("direction"):
+            strategy["directional_bias"] = config["direction"]
+        if "is_supported" in config:
+            strategy["is_supported"] = bool(config["is_supported"])
+        if isinstance(config.get("target_deltas"), dict):
+            strategy["target_deltas"] = dict(config["target_deltas"])
+        if isinstance(config.get("default_dte"), dict):
+            strategy["default_dte"] = dict(config["default_dte"])
+
+    return strategy_definitions
+
+
+STRATEGY_DEFINITIONS = _build_strategy_definitions()
 
 
 def _normalize_strategy_key(strategy_key):
@@ -66,6 +120,10 @@ def get_strategy(strategy_key):
 
 
 def get_strategy_definition(strategy_key):
+    return get_strategy(strategy_key)
+
+
+def get_strategy_config(strategy_key):
     return get_strategy(strategy_key)
 
 

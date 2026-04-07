@@ -6,7 +6,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from config_loader import load_config
+from config_loader import load_config, load_strategy_config
 from profiles import PROFILES
 
 
@@ -21,6 +21,7 @@ DEFAULT_SETTINGS = {
     "dte_max": 35,
     "history_dir": ".history",
     "cache_dir": ".cache",
+    "strategy_config": {},
     "alpaca_api_key": None,
     "alpaca_api_secret": None,
     "alpaca_data_base_url": "https://data.alpaca.markets",
@@ -85,6 +86,7 @@ def get_settings(cli_overrides=None):
 
     resolved = deepcopy(DEFAULT_SETTINGS)
     resolved.update(load_config())
+    resolved["strategy_config"] = load_strategy_config()
 
     effective_profile = overrides.get("profile", resolved.get("profile"))
     profile_config = PROFILES.get(effective_profile, {})

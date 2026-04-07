@@ -1,0 +1,24 @@
+strategies:
+  bull_put_spread:
+    enabled: true
+    display_label: bull put spread
+    family: credit_spread
+    direction: bullish
+    target_deltas:
+      short: -0.30
+      long: -0.20
+    default_dte:
+      min: 20
+      max: 35
+
+  bear_call_spread:
+    enabled: true
+    display_label: bear call spread
+    family: credit_spread
+    direction: bearish
+    target_deltas:
+      short: 0.30
+      long: 0.20
+    default_dte:
+      min: 20
+      max: 35

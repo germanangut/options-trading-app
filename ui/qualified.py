@@ -2,8 +2,10 @@
 
 import streamlit as st
 from ui.components import (
+    get_strategy_display_name,
     render_metric_row,
     render_trade_header,
+    render_strategy_context_row,
     render_stability_block,
     render_decision_summary,
     render_json_expander,
@@ -53,23 +55,40 @@ def render_qualified_trades(qualified, provider_errors=None, missing_tickers=Non
     # Qualified Summary section
     with st.container(border=True):
         st.markdown("### Qualified Summary")
-        
+
         total_trades = len(qualified)
         stable_count = sum(1 for s in qualified if s.get("stability_level") == "stable")
         avg_score = sum(s.get("adjusted_score", 0) for s in qualified) / total_trades if total_trades > 0 else 0
         top_ticker = qualified[0].get("ticker") if qualified else "N/A"
-        
+
         col1, col2, col3, col4 = st.columns(4)
         col1.metric("Total Qualified", total_trades)
         col2.metric("Stable Trades", stable_count)
         col3.metric("Avg Score", f"{avg_score:.1f}")
         col4.metric("Top Ticker", top_ticker)
 
+        strategy_counts = {}
+        for spread in qualified:
+            strategy_name = get_strategy_display_name(spread)
+            strategy_counts[strategy_name] = strategy_counts.get(strategy_name, 0) + 1
+
+        if strategy_counts:
+            st.markdown("#### By Strategy")
+            strategy_cols = st.columns(len(strategy_counts))
+            for col, (strategy_name, count) in zip(strategy_cols, strategy_counts.items()):
+                col.metric(strategy_name, count)
+
     # Trade cards (respecting engine sort order)
     for i, spread in enumerate(qualified, start=1):
         with st.container(border=True):
-            render_trade_header(spread.get('ticker'), spread.get('strategy_type'), rank=i)
+            render_trade_header(
+                spread.get('ticker'),
+                spread.get('strategy_type'),
+                rank=i,
+                spread=spread,
+            )
 
+            render_strategy_context_row(spread)
             render_metric_row(spread)
 
             col1, col2 = st.columns(2)
@@ -93,8 +112,8 @@ def render_qualified_trades(qualified, provider_errors=None, missing_tickers=Non
             render_stability_block(spread)
 
             if spread.get("status_reason"):
-                st.markdown(f"**Status:** {spread.get('status_reason')}")
+                strategy_name = get_strategy_display_name(spread)
+                st.markdown(f"**Why {strategy_name} qualified:** {spread.get('status_reason')}")
 
             render_decision_summary(spread)
-
             render_json_expander(spread)

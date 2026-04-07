@@ -2,8 +2,10 @@
 
 import streamlit as st
 from ui.components import (
+    get_strategy_display_name,
     render_metric_row,
     render_trade_header,
+    render_strategy_context_row,
     render_stability_block,
     render_decision_summary,
     render_json_expander,
@@ -54,9 +56,35 @@ def render_alerts(alerts, provider_errors=None, missing_tickers=None, qualified_
             )
         return
 
+    with st.container(border=True):
+        st.markdown("### Alert Summary")
+
+        stable_count = sum(1 for alert in alerts if alert.get("stability_level") == "stable")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Alerts", len(alerts))
+        col2.metric("Stable Alerts", stable_count)
+        col3.metric("Qualified Trades", qualified_count)
+
+        strategy_counts = {}
+        for alert in alerts:
+            strategy_name = get_strategy_display_name(alert)
+            strategy_counts[strategy_name] = strategy_counts.get(strategy_name, 0) + 1
+
+        if strategy_counts:
+            st.markdown("#### By Strategy")
+            strategy_cols = st.columns(len(strategy_counts))
+            for col, (strategy_name, count) in zip(strategy_cols, strategy_counts.items()):
+                col.metric(strategy_name, count)
+
     for i, alert in enumerate(alerts, start=1):
         with st.container(border=True):
-            render_trade_header(alert.get('ticker'), alert.get('strategy_type'), rank=i)
+            render_trade_header(
+                alert.get('ticker'),
+                alert.get('strategy_type'),
+                rank=i,
+                spread=alert,
+            )
+            render_strategy_context_row(alert)
             render_metric_row(alert)
 
             st.markdown(
