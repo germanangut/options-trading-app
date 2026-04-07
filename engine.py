@@ -7,6 +7,7 @@ from exporter import export_alerts_to_csv
 from history import save_scan, compute_alert_stability
 from metrics import evaluate_spread
 from output import filter_results, build_summary
+from portfolio import compute_portfolio_exposure_summary
 from selection import select_leg
 from settings import get_settings
 from spreads import build_spread
@@ -258,6 +259,9 @@ def run_scan_engine(
     filtered["summary"] = build_summary(
         filtered.get("qualified", []),
         filtered.get("near_miss", []),
+    )
+    filtered["portfolio_exposure_summary"] = compute_portfolio_exposure_summary(
+        filtered,
     )
 
     filtered["missing_tickers"] = missing_tickers

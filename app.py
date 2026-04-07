@@ -284,6 +284,51 @@ def render_system_signals(output):
             st.info(health_message)
 
 
+def render_portfolio_signals(output):
+    """Render a compact, descriptive summary of current-run exposure and concentration."""
+    st.subheader("Portfolio Signals")
+
+    exposure = output.get("portfolio_exposure_summary") or {}
+    qualified_summary = exposure.get("qualified") or {}
+    metadata = exposure.get("metadata") or {}
+
+    qualified_count = metadata.get("qualified_trade_count", 0)
+    if qualified_count == 0:
+        with st.container(border=True):
+            st.info("No qualified trades are available yet, so portfolio concentration signals are limited for this run.")
+        return
+
+    top_ticker = (qualified_summary.get("top_ticker_concentration") or [None])[0] or {}
+    top_strategy = (qualified_summary.get("counts_by_strategy") or [None])[0] or {}
+    top_direction = (qualified_summary.get("directional_exposure") or [None])[0] or {}
+
+    with st.container(border=True):
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("Qualified Trades", qualified_count)
+        col2.metric(
+            "Top Ticker",
+            top_ticker.get("ticker", "n/a"),
+            f"{top_ticker.get('share_pct', 0)}%" if top_ticker else None,
+        )
+        col3.metric(
+            "Top Strategy",
+            top_strategy.get("strategy", "n/a"),
+            f"{top_strategy.get('count', 0)} trade(s)" if top_strategy else None,
+        )
+        col4.metric(
+            "Directional Tilt",
+            str(top_direction.get("directional_bias", "n/a")).replace("_", " ").title(),
+            f"{top_direction.get('share_pct', 0)}%" if top_direction else None,
+        )
+
+        notes = exposure.get("notes") or []
+        if notes:
+            for note in notes[:2]:
+                st.write(f"- {note}")
+        else:
+            st.write("- Current qualified candidates look relatively diversified across the scanned set.")
+
+
 def _normalize_history_value(value):
     return str(value or "").strip().replace("_", " ").lower()
 
@@ -712,7 +757,7 @@ if run_button:
     with tab_overview:
         
         render_trade_lifecycle()
-        
+        render_portfolio_signals(output)
         render_top_decision_panel(
             top_overall,
             summary.get("qualified_count", len(qualified)), 
@@ -722,6 +767,7 @@ if run_button:
             top_overall,
             qualified[0] if qualified else None,
         )
+        
         render_system_boundaries()
         render_system_signals(output)
 
