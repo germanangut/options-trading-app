@@ -1,0 +1,72 @@
+version: 1
+last_reviewed: 2026-04-08
+purpose: Lightweight definition of the app's current productization-readiness posture.
+
+product_stage:
+  current: internal-grade decision-support platform
+  posture: production-minded and suitable for controlled internal use
+  broader_release_status: not yet ready for wider product distribution
+
+primary_usage_model:
+  interaction_modes:
+    - Streamlit UI for manual review and interpretation
+    - CLI for local and scripted analyst workflows
+  operating_pattern: user-in-the-loop analysis; final decisions remain manual
+
+intended_use:
+  summary: Evaluate options credit spread opportunities using the current rules engine and available market data.
+  supported_workflows:
+    - scan configured ticker groups
+    - review alerts and qualified trades
+    - inspect run health, daily summary, and raw output
+    - use historical context and exports for follow-up review
+  non_goals:
+    - live trade execution
+    - brokerage automation
+    - autonomous portfolio management
+
+current_user_scope:
+  audience: small trusted internal users
+  usage_profile: technically familiar, low-volume usage
+  support_model: owner-guided or self-service internal operation
+
+product_boundaries:
+  in_scope:
+    - bull put and bear call spread evaluation using the existing engine rules
+    - Alpaca-backed market data when credentials are configured
+    - built-in mock data fallback for development and test usage
+    - local history, cache, and CSV export support already present in the app
+    - strategy-aware and portfolio-aware review surfaces already implemented
+  out_of_scope:
+    - authentication or role-based access control
+    - public-facing SaaS or multi-tenant operation
+    - cloud-specific deployment guarantees
+    - order routing, execution, or account automation
+
+current_deployment_readiness:
+  readiness_level: local/internal deployment ready
+  packaging:
+    - Dockerfile is present
+    - docker-compose.yml is present
+  execution_model:
+    ui_entrypoint: app.py
+    cli_entrypoint: main.py
+    service_shape: single Python application with UI and CLI entrypoints
+  configuration_sources:
+    - config.yaml
+    - environment variables for optional provider and storage settings
+  runtime_state:
+    - filesystem-backed history persistence
+    - filesystem-backed market-data cache
+  validation_status:
+    - CI compiles Python sources
+    - CI runs pytest
+    - CI validates Docker image buildability
+
+key_requirements_before_wider_sharing:
+  - standardize environment setup and secret handling for non-developer users
+  - define persistent storage expectations for history and cache
+  - document supported operating model, ownership, and support boundaries
+  - establish release/versioning and change-management expectations
+  - add monitoring, logging, and recovery guidance for operational use
+  - introduce authentication and authorization if the user scope expands

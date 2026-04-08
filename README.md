@@ -37,6 +37,10 @@ The app is intended for **analysis and decision support**:
 - A run with no alerts or no qualified trades can still be a healthy outcome
 - Final trade decisions require user judgment
 
+## Productization readiness
+
+A lightweight productization posture definition lives in `infra/product_readiness.yaml`. It documents the app's current stage, intended internal usage model, boundaries, current deployment readiness, and the key requirements before wider sharing. The current deployment target decision is documented in `infra/deployment_target.md`.
+
 ## Quick start
 
 ### 1) Create and activate a virtual environment
@@ -130,6 +134,8 @@ python main.py --profile balanced --group tech --export-csv
 
 ## Docker and local container runs
 
+For a simple VM-based operational setup, see `infra/vm_deployment.md`.
+
 Build the image:
 
 ```bash
@@ -160,6 +166,9 @@ If you want to preserve history and cache between runs, keep the mounted data di
 - `data_provider.py` — market data access and provider fallback behavior
 - `history.py` / `history_reader.py` — persistence and trend/stability context
 - `output.py` — output formatting and export helpers
+- `infra/product_readiness.yaml` — lightweight definition of the current productization-readiness posture
+- `infra/deployment_target.md` — concise record of the selected deployment approach and rationale
+- `infra/vm_deployment.md` — practical guide for running the app on a single VM with Docker
 
 ## Default ticker groups
 
