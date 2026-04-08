@@ -10,10 +10,11 @@ The current Streamlit dashboard is organized around a practical review workflow:
 
 | Area | Purpose |
 | --- | --- |
-| `Overview` | Shows the Top Decision, System Signals, Trade Lifecycle, and System Boundaries |
-| `Alerts` | Surfaces initial opportunities worth reviewing |
+| `Overview` | Shows the Top Decision, system signals, trade lifecycle, historical signal context, and system boundaries |
+| `Portfolio` | Summarizes current-run concentration, directional tilt, overlap, and sizing context |
+| `Alerts` | Surfaces fresh opportunities worth reviewing |
 | `Qualified Trades` | Focuses on the strongest current candidates that cleared the active thresholds |
-| `History` | Shows recurring patterns and stability context from prior runs |
+| `History` | Shows trend insights, recurring alerts, and historical context from prior runs |
 | `Daily Summary` | Gives a run-level interpretation of what the scan found |
 | `Raw Output` | Exposes the full structured engine response for inspection |
 
@@ -47,6 +48,18 @@ A lightweight productization posture definition lives in `infra/product_readines
 
 ```bash
 python -m venv venv
+```
+
+Activate it:
+
+**Windows PowerShell**
+```powershell
+.\venv\Scripts\Activate.ps1
+```
+
+**macOS / Linux**
+```bash
+source venv/bin/activate
 ```
 
 ### 2) Install dependencies
@@ -134,7 +147,7 @@ python main.py --profile balanced --group tech --export-csv
 
 ## Docker and local container runs
 
-For a simple VM-based operational setup, see `infra/vm_deployment.md`.
+For a simple VM-based operational setup, see `infra/vm_deployment.md`. For the current private/internal access approach, see `infra/access_model.md`.
 
 Build the image:
 
@@ -160,7 +173,7 @@ If you want to preserve history and cache between runs, keep the mounted data di
 
 - `app.py` — Streamlit UI and presentation logic
 - `engine.py` — core scan engine and business rules
-- `ui/` — focused rendering helpers for alerts and qualified trades
+- `ui/` — focused rendering helpers for overview, portfolio, alerts, and qualified trades
 - `main.py` — CLI entry point
 - `settings.py` — runtime configuration resolution
 - `data_provider.py` — market data access and provider fallback behavior
@@ -169,12 +182,13 @@ If you want to preserve history and cache between runs, keep the mounted data di
 - `infra/product_readiness.yaml` — lightweight definition of the current productization-readiness posture
 - `infra/deployment_target.md` — concise record of the selected deployment approach and rationale
 - `infra/vm_deployment.md` — practical guide for running the app on a single VM with Docker
+- `infra/access_model.md` — definition of the current private/internal access pattern and reverse proxy approach
 
 ## Default ticker groups
 
 - `tech`: `NVDA`, `TSLA`, `META`, `AAPL`, `MSFT`
 - `index`: `SPY`, `QQQ`, `IWM`
-- `mixed`: `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`
+- `mixed`: `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `TSLA`, `INTC`, `AMD`, `AMZN`, `GOOGL`
 
 ## Testing and validation
 

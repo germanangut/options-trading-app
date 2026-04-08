@@ -23,8 +23,40 @@ BASE_DIR = Path(__file__).resolve().parent
 MAIN_PY = BASE_DIR / "main.py"
 
 st.title("Options Trading Dashboard")
+st.caption(
+    "Decision-support dashboard for reviewing credit spread opportunities, run quality, and historical context."
+)
+
+with st.container(border=True):
+    st.markdown("#### How to use this dashboard")
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        st.markdown("**1. Configure & run**")
+        st.caption("Use the sidebar to choose the profile, ticker group, and strategies for the current scan.")
+
+    with col2:
+        st.markdown("**2. Start in Overview**")
+        st.caption("Review the Top Decision, system signals, and portfolio context to understand the run quickly.")
+
+    with col3:
+        st.markdown("**3. Validate in detail**")
+        st.caption("Use Alerts, Qualified Trades, History, and Daily Summary to confirm and compare candidates.")
+
+    st.caption(
+        "Analytical use only — the dashboard supports review and prioritization; final trade decisions remain manual."
+    )
 
 st.sidebar.header("Run Configuration")
+st.sidebar.caption(
+    "Set the scan inputs and click **Run Scan** to refresh the current decision view."
+)
+with st.sidebar.expander("Quick guide", expanded=False):
+    st.markdown(
+        "- **Overview:** Start here for the headline view.\n"
+        "- **Qualified Trades:** Review the strongest current candidates.\n"
+        "- **History:** Use recurring context from prior runs."
+    )
 
 profile = st.sidebar.selectbox(
     "Profile",
@@ -789,7 +821,10 @@ if run_button:
         )
 
     with tab_overview:
-        
+        st.caption(
+            "Start here for the headline view of the run, then use the detail tabs to validate and compare candidates."
+        )
+
         render_trade_lifecycle()
         render_portfolio_signals(output)
         render_portfolio_decision(output)
@@ -853,3 +888,12 @@ if run_button:
 
     with tab_raw:
         st.json(output)
+else:
+    with st.container(border=True):
+        st.markdown("### Start Here")
+        st.write(
+            "Choose a profile, ticker group, and strategy set in the sidebar, then click **Run Scan** to generate the current decision view."
+        )
+        st.caption(
+            "For first-time walkthroughs, begin in **Overview**, then move to **Qualified Trades** and **History** for deeper review."
+        )
