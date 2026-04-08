@@ -12,7 +12,107 @@ from ui.components import (
 )
 
 
-def render_qualified_trades(qualified, provider_errors=None, missing_tickers=None):
+def _normalize_portfolio_value(value):
+    return str(value or "").strip().replace("_", " ").lower()
+
+
+def _find_context_row(rows, key_name, *candidates):
+    normalized_candidates = {
+        _normalize_portfolio_value(candidate)
+        for candidate in candidates
+        if candidate not in (None, "")
+    }
+
+    if not normalized_candidates:
+        return None
+
+    for row in rows or []:
+        if _normalize_portfolio_value(row.get(key_name)) in normalized_candidates:
+            return row
+
+    return None
+
+
+def _find_sizing_row(spread, position_sizing_summary=None):
+    strategy_name = get_strategy_display_name(spread)
+
+    return _find_context_row(
+        (position_sizing_summary or {}).get("trade_sizing", []),
+        "strategy",
+        strategy_name,
+        spread.get("strategy_type"),
+        spread.get("strategy_label"),
+    )
+
+
+def render_portfolio_trade_context(
+    spread,
+    portfolio_exposure_summary=None,
+    position_sizing_summary=None,
+    exposure_overlap_summary=None,
+):
+    """Render small, secondary portfolio-aware notes for an individual qualified trade."""
+    notes = []
+    ticker = spread.get("ticker")
+    direction = spread.get("directional_bias")
+
+    ticker_row = _find_context_row(
+        ((portfolio_exposure_summary or {}).get("qualified") or {}).get("counts_by_ticker", []),
+        "ticker",
+        ticker,
+    )
+    if ticker_row and ticker_row.get("share_pct", 0) >= 30:
+        notes.append(
+            f"{ticker} represents **{ticker_row.get('share_pct')}%** of the current qualified set."
+        )
+
+    sizing_row = _find_sizing_row(spread, position_sizing_summary=position_sizing_summary)
+    if sizing_row:
+        estimated_risk = sizing_row.get("estimated_max_risk_dollars")
+        fits_budget = sizing_row.get("fits_risk_budget")
+        contracts = sizing_row.get("approx_contracts_within_budget")
+
+        if estimated_risk is not None:
+            if fits_budget is True:
+                contract_note = (
+                    f"fits the sample risk budget (up to {contracts} contract(s))"
+                    if contracts is not None
+                    else "fits the sample risk budget"
+                )
+                notes.append(
+                    f"Est. max risk **${estimated_risk}** and {contract_note}."
+                )
+            elif fits_budget is False:
+                notes.append(
+                    f"Est. max risk **${estimated_risk}** and it sits above the sample per-trade risk budget."
+                )
+            else:
+                notes.append(f"Est. max risk **${estimated_risk}**.")
+
+    overlap_row = _find_context_row(
+        (exposure_overlap_summary or {}).get("repeated_ticker_direction_combinations", []),
+        "ticker_direction",
+        f"{ticker} | {direction}",
+    )
+    if overlap_row:
+        notes.append(
+            f"Overlap note: **{ticker} | {str(direction or 'unknown').replace('_', ' ')}** appears **{overlap_row.get('count', 0)}** time(s) in the current qualified set."
+        )
+
+    if notes:
+        st.caption("Portfolio Context")
+        for note in notes[:3]:
+            st.write(f"- {note}")
+
+
+def render_qualified_trades(
+    qualified,
+    provider_errors=None,
+    missing_tickers=None,
+    portfolio_exposure_summary=None,
+    position_sizing_summary=None,
+    exposure_overlap_summary=None,
+):
     """Render the qualified trades list with summary and detailed cards.
     
     Args:
@@ -114,6 +214,13 @@ def render_qualified_trades(qualified, provider_errors=None, missing_tickers=Non
             if spread.get("status_reason"):
                 strategy_name = get_strategy_display_name(spread)
                 st.markdown(f"**Why {strategy_name} qualified:** {spread.get('status_reason')}")
+
+            render_portfolio_trade_context(
+                spread,
+                portfolio_exposure_summary=portfolio_exposure_summary,
+                position_sizing_summary=position_sizing_summary,
+                exposure_overlap_summary=exposure_overlap_summary,
+            )
 
             render_decision_summary(spread)
             render_json_expander(spread)

@@ -13,6 +13,7 @@ from ui.components import (
 )
 from ui.qualified import render_qualified_trades
 from ui.alerts import render_alerts
+from ui.portfolio import render_portfolio_tab
 import streamlit as st
 
 
@@ -327,6 +328,39 @@ def render_portfolio_signals(output):
                 st.write(f"- {note}")
         else:
             st.write("- Current qualified candidates look relatively diversified across the scanned set.")
+
+
+def render_portfolio_decision(output):
+    """Render a compact portfolio-level interpretation using existing summary outputs."""
+    st.subheader("Portfolio Decision")
+
+    decision_summary = output.get("portfolio_decision_summary") or {}
+    posture_label = decision_summary.get("posture_label")
+    key_signals = decision_summary.get("key_portfolio_signals") or []
+    interpretation = decision_summary.get("interpretation") or []
+    cautions = decision_summary.get("cautions") or []
+
+    if not posture_label and not key_signals and not interpretation:
+        with st.container(border=True):
+            st.info("Portfolio-level interpretation is limited for this run because there is not enough current portfolio context yet.")
+        return
+
+    with st.container(border=True):
+        if posture_label:
+            st.markdown(f"### {posture_label}")
+
+        for message in interpretation[:2]:
+            st.write(message)
+
+        if key_signals:
+            st.markdown("**Key Signals**")
+            for signal in key_signals[:3]:
+                st.write(f"- {signal}")
+
+        if cautions:
+            st.markdown("**Cautions**")
+            for caution in cautions[:3]:
+                st.write(f"- {caution}")
 
 
 def _normalize_history_value(value):
@@ -750,14 +784,15 @@ if run_button:
 
     st.success("Scan completed successfully.")
 
-    tab_overview, tab_alerts, tab_qualified, tab_history, tab_summary, tab_raw = st.tabs(
-            ["Overview", "Alerts", "Qualified Trades", "History", "Daily Summary", "Raw Output"]
+    tab_overview, tab_portfolio, tab_alerts, tab_qualified, tab_history, tab_summary, tab_raw = st.tabs(
+            ["Overview", "Portfolio", "Alerts", "Qualified Trades", "History", "Daily Summary", "Raw Output"]
         )
 
     with tab_overview:
         
         render_trade_lifecycle()
         render_portfolio_signals(output)
+        render_portfolio_decision(output)
         render_top_decision_panel(
             top_overall,
             summary.get("qualified_count", len(qualified)), 
@@ -789,6 +824,9 @@ if run_button:
             col5.metric("Min Score", alert_thresholds.get("min_score"))
             col6.metric("POP Weight", scoring_weights.get("pop_weight"))
 
+    with tab_portfolio:
+        render_portfolio_tab(output)
+
     with tab_alerts:
         render_alerts(
             alerts,
@@ -802,6 +840,9 @@ if run_button:
             qualified,
             provider_errors=output.get("provider_errors"),
             missing_tickers=output.get("missing_tickers"),
+            portfolio_exposure_summary=output.get("portfolio_exposure_summary"),
+            position_sizing_summary=output.get("position_sizing_summary"),
+            exposure_overlap_summary=output.get("exposure_overlap_summary"),
         )
 
     with tab_history:
