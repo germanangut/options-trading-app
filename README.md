@@ -6,7 +6,7 @@
 
 ## What the app looks like today
 
-The current Streamlit dashboard is organized around a practical review workflow:
+The current Streamlit dashboard is organized around a practical review workflow: 
 
 | Area | Purpose |
 | --- | --- |
