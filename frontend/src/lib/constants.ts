@@ -28,3 +28,20 @@ export const NAV_ITEMS = [
   { to: "/history", label: "History", shortcut: "05" },
   { to: "/daily-summary", label: "Daily Summary", shortcut: "06" },
 ];
+
+export const PROFILE_OPTIONS = [
+  { value: "conservative", label: "Conservative" },
+  { value: "balanced", label: "Balanced" },
+  { value: "aggressive", label: "Aggressive" },
+];
+
+export const TICKER_GROUP_OPTIONS = [
+  { value: "tech", label: "Tech" },
+  { value: "index", label: "Index" },
+  { value: "mixed", label: "Mixed" },
+];
+
+export const STRATEGY_OPTIONS = [
+  { value: "bull_put_spread", label: "Bull Put Spread" },
+  { value: "bear_call_spread", label: "Bear Call Spread" },
+];

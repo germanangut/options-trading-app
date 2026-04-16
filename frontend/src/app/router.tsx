@@ -6,6 +6,7 @@ import { DailySummaryPage } from "../pages/DailySummaryPage";
 import { HistoryPage } from "../pages/HistoryPage";
 import { OverviewPage } from "../pages/OverviewPage";
 import { PortfolioPage } from "../pages/PortfolioPage";
+import { QualifiedTradeDetailPage } from "../pages/QualifiedTradeDetailPage";
 import { QualifiedTradesPage } from "../pages/QualifiedTradesPage";
 
 const router = createBrowserRouter([
@@ -15,6 +16,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <OverviewPage /> },
       { path: "qualified", element: <QualifiedTradesPage /> },
+      { path: "qualified/:tradeId", element: <QualifiedTradeDetailPage /> },
       { path: "alerts", element: <AlertsPage /> },
       { path: "portfolio", element: <PortfolioPage /> },
       { path: "history", element: <HistoryPage /> },

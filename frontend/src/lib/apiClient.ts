@@ -1,5 +1,15 @@
 import { API_BASE_URL } from "./constants";
 
+export class ApiError extends Error {
+  status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
+
 type RequestInitWithBody = RequestInit & {
   body?: unknown;
 };
@@ -26,7 +36,7 @@ async function request<T>(path: string, init?: RequestInitWithBody): Promise<T> 
       detail = response.statusText || detail;
     }
 
-    throw new Error(detail);
+    throw new ApiError(detail, response.status);
   }
 
   return (await response.json()) as T;
