@@ -43,6 +43,10 @@ export type TradeIdentityFields = {
   DTE?: number;
   short_strike?: number;
   long_strike?: number;
+  underlying_price?: number;
+  net_credit?: number;
+  spread_width?: number;
+  max_risk?: number;
   POP?: number;
   ROR?: number;
   score?: number;
@@ -50,6 +54,11 @@ export type TradeIdentityFields = {
   label?: string;
   decision_summary?: string;
   directional_bias?: string;
+  status_reason?: string;
+  explanation?: string;
+  volatility_context?: string;
+  stability_level?: string;
+  stability_count?: number;
 };
 
 export type QualifiedTradeRow = TradeIdentityFields;
@@ -76,6 +85,129 @@ export type ScanDiagnostics = {
   } | null;
 };
 
+export type HistoryMetadata = {
+  runs_analyzed?: number;
+  signals_analyzed?: number;
+  latest_run_timestamp?: string | null;
+  history_available?: boolean;
+  signal_history_available?: boolean;
+};
+
+export type HistoryCountRow = {
+  ticker?: string;
+  strategy?: string;
+  label?: string;
+  volatility_context?: string;
+  stability_level?: string;
+  count: number;
+};
+
+export type HistoryAverageRow = {
+  ticker?: string;
+  strategy?: string;
+  pair?: string;
+  volatility_context?: string;
+  stability_level?: string;
+  average_adjusted_score?: number | null;
+  count?: number;
+};
+
+export type HistoricalIntelligenceSummary = {
+  metadata?: HistoryMetadata;
+  signal_quality_summary?: {
+    most_frequent_qualified_tickers?: HistoryCountRow[];
+    most_frequent_qualified_strategies?: HistoryCountRow[];
+    recurring_high_quality_patterns?: Array<{
+      pattern: string;
+      count: number;
+      average_adjusted_score?: number | null;
+    }>;
+  };
+  feature_summary?: {
+    average_adjusted_score_by_ticker_strategy_pair?: HistoryAverageRow[];
+  };
+};
+
+export type HistoryContext = {
+  historical_intelligence_summary?: HistoricalIntelligenceSummary;
+};
+
+export type DailySummary = {
+  profile?: string;
+  ticker_group?: string;
+  execution_time_seconds?: number | null;
+  dte_range?: {
+    dte_min?: number;
+    dte_max?: number;
+  };
+  qualified_count?: number;
+  near_miss_count?: number;
+  alerts_count?: number;
+  top_overall?: QualifiedTradeRow | null;
+  stable_alert_count?: number;
+  emerging_alert_count?: number;
+  new_alert_count?: number;
+  most_stable_alert?: QualifiedTradeRow | null;
+};
+
+export type PortfolioSummary = {
+  exposure?: {
+    metadata?: {
+      qualified_trade_count?: number;
+      alert_trade_count?: number;
+    };
+    qualified?: {
+      counts_by_ticker?: Array<{ ticker: string; count: number; share_pct?: number }>;
+      counts_by_strategy?: Array<{ strategy: string; count: number; share_pct?: number }>;
+      directional_exposure?: Array<{ directional_bias: string; count: number; share_pct?: number }>;
+      top_ticker_concentration?: Array<{ ticker: string; count: number; share_pct?: number }>;
+      notes?: string[];
+    };
+    alerts?: {
+      notes?: string[];
+    };
+    notes?: string[];
+  };
+  position_sizing?: {
+    inputs?: {
+      account_size?: number;
+      max_risk_pct?: number;
+      max_risk_dollars?: number;
+    };
+    summary?: {
+      qualified_trade_count?: number;
+      trade_count_with_risk_estimate?: number;
+      fits_budget_count?: number;
+      oversized_count?: number;
+      insufficient_data_count?: number;
+      average_estimated_max_risk_dollars?: number | null;
+    };
+    trade_sizing?: Array<{
+      ticker?: string;
+      strategy?: string;
+      adjusted_score?: number;
+      estimated_max_risk_dollars?: number | null;
+      fits_risk_budget?: boolean | null;
+      approx_contracts_within_budget?: number | null;
+      sizing_note?: string;
+    }>;
+    warnings?: string[];
+  };
+  overlap?: {
+    repeated_ticker_direction_combinations?: Array<{
+      ticker_direction: string;
+      count: number;
+    }>;
+    notes?: string[];
+  };
+  decision?: {
+    posture_label?: string;
+    interpretation?: string[];
+    key_portfolio_signals?: string[];
+    cautions?: string[];
+  };
+};
+
 export type ScanResult = {
   scan_metadata: ScanMetadataBasics;
   summary: ScanSummaryBasics;
@@ -83,8 +215,8 @@ export type ScanResult = {
   alerts: AlertItem[];
   near_miss_trades: QualifiedTradeRow[];
   ticker_diagnostics: Array<Record<string, unknown>>;
-  portfolio_summary: Record<string, unknown>;
-  history_context: Record<string, unknown>;
-  daily_summary: Record<string, unknown>;
+  portfolio_summary: PortfolioSummary;
+  history_context: HistoryContext;
+  daily_summary: DailySummary;
   diagnostics: ScanDiagnostics;
 };

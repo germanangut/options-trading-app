@@ -9,6 +9,7 @@ $repoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $venvPython = Join-Path $repoRoot "venv\Scripts\python.exe"
 $frontendDir = Join-Path $repoRoot "frontend"
 $streamlitApp = Join-Path $repoRoot "app.py"
+$defaultNodeDir = "C:\Program Files\nodejs"
 
 if (-not (Test-Path $venvPython)) {
     throw "Python virtual environment not found at '$venvPython'."
@@ -24,7 +25,7 @@ if (-not (Test-Path $streamlitApp)) {
 
 $npmCommand = Get-Command "npm.cmd" -ErrorAction SilentlyContinue
 if (-not $npmCommand) {
-    $defaultNpm = "C:\Program Files\nodejs\npm.cmd"
+    $defaultNpm = Join-Path $defaultNodeDir "npm.cmd"
     if (Test-Path $defaultNpm) {
         $npmCommand = Get-Item $defaultNpm
     } else {
@@ -32,7 +33,17 @@ if (-not $npmCommand) {
     }
 }
 
-$npmPath = $npmCommand.Source
+if ($npmCommand.PSObject.Properties["Source"] -and $npmCommand.Source) {
+    $npmPath = [string]$npmCommand.Source
+} elseif ($npmCommand.PSObject.Properties["Path"] -and $npmCommand.Path) {
+    $npmPath = [string]$npmCommand.Path
+} elseif ($npmCommand.PSObject.Properties["FullName"] -and $npmCommand.FullName) {
+    $npmPath = [string]$npmCommand.FullName
+} else {
+    throw "Unable to resolve npm executable path from command metadata."
+}
+
+$npmPath = (Resolve-Path $npmPath).Path
 $frontendNodeModules = Join-Path $frontendDir "node_modules"
 $shouldInstallFrontendDeps = $InstallFrontendDeps -or -not (Test-Path $frontendNodeModules)
 
@@ -59,13 +70,46 @@ $Command
     ) | Out-Null
 }
 
+function New-KeepOpenCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Command,
+        [Parameter(Mandatory = $true)]
+        [string]$FailureMessage
+    )
+
+    return @"
+try {
+    $Command
+} catch {
+    Write-Host ''
+    Write-Host '$FailureMessage' -ForegroundColor Red
+    Write-Host `$_.Exception.Message -ForegroundColor Red
+}
+Write-Host ''
+Read-Host 'Press Enter to close this window'
+"@
+}
+
 $backendCommand = "& '$venvPython' -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload"
 Start-DevWindow -Title "Options Backend" -WorkingDirectory $repoRoot -Command $backendCommand
 
 if ($shouldInstallFrontendDeps) {
-    $frontendCommand = "& '$npmPath' install; if (`$LASTEXITCODE -ne 0) { exit `$LASTEXITCODE }; & '$npmPath' run dev"
+    $frontendCommand = New-KeepOpenCommand -Command @"
+`$env:Path = '$defaultNodeDir;' + `$env:Path
+`$env:NPM_CONFIG_OFFLINE = 'false'
+& '$npmPath' install
+if (`$LASTEXITCODE -ne 0) { throw 'npm install failed.' }
+& '$npmPath' run dev
+if (`$LASTEXITCODE -ne 0) { throw 'npm run dev failed.' }
+"@ -FailureMessage "Frontend startup failed."
 } else {
-    $frontendCommand = "& '$npmPath' run dev"
+    $frontendCommand = New-KeepOpenCommand -Command @"
+`$env:Path = '$defaultNodeDir;' + `$env:Path
+`$env:NPM_CONFIG_OFFLINE = 'false'
+& '$npmPath' run dev
+if (`$LASTEXITCODE -ne 0) { throw 'npm run dev failed.' }
+"@ -FailureMessage "Frontend startup failed."
 }
 Start-DevWindow -Title "Options Frontend" -WorkingDirectory $frontendDir -Command $frontendCommand
 
