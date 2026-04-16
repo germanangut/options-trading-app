@@ -1,0 +1,17 @@
+:root {
+  --surface-0: 245 247 250;
+  --surface-1: 255 255 255;
+  --surface-2: 238 242 247;
+
+  --ink-1: 15 23 42;
+  --ink-2: 71 85 105;
+  --ink-3: 100 116 139;
+
+  --accent: 15 118 110;
+  --accent-soft: 204 251 241;
+  --success: 22 163 74;
+  --warning: 217 119 6;
+  --danger: 225 29 72;
+
+  --radius-panel: 1rem;
+}
