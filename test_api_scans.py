@@ -7,6 +7,7 @@ import uuid
 
 fastapi = pytest.importorskip("fastapi")
 pytest.importorskip("uvicorn")
+pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 

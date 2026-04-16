@@ -4,3 +4,4 @@ python-dotenv==1.2.2
 streamlit==1.56.0
 fastapi==0.118.0
 uvicorn==0.37.0
+httpx==0.28.1
