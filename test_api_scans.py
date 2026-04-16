@@ -12,7 +12,7 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient
 
 from backend.api.main import app
-from backend.api.routes import scans
+from backend.services.scan_store import clear_scan_store
 
 
 def _force_mock_mode(monkeypatch, workspace_tmp_dir):
@@ -26,7 +26,7 @@ def test_post_scan_and_get_latest(monkeypatch):
     workspace_tmp_dir = Path("tmp_test_api_scans") / str(uuid.uuid4())
     workspace_tmp_dir.mkdir(parents=True, exist_ok=True)
     _force_mock_mode(monkeypatch, workspace_tmp_dir)
-    scans._LATEST_SCAN_RESULT = None
+    clear_scan_store()
 
     try:
         client = TestClient(app)
@@ -56,6 +56,7 @@ def test_post_scan_and_get_latest(monkeypatch):
             "daily_summary",
             "diagnostics",
         }
+        assert body["scan_metadata"]["scan_id"].startswith("scan_")
 
         latest_response = client.get("/scans/latest")
         assert latest_response.status_code == 200
