@@ -4,6 +4,7 @@ from collections import Counter, defaultdict
 from datetime import datetime
 from pathlib import Path
 
+from backend.services.scan_store import list_scan_results
 from settings import get_settings
 
 
@@ -96,14 +97,37 @@ def get_available_history_files(include_fallback_dirs=False):
 
 
 def load_all_history_runs(include_fallback_dirs=True):
+    """Load history newest-first from canonical persisted scans when available.
+
+    Persisted canonical scans are authoritative. Legacy JSONL files remain a
+    compatibility-only fallback for older runs that predate repository-backed
+    storage.
+    """
     runs = []
+
+    for scan_result in list_scan_results(newest_first=True):
+        snapshot = _build_run_snapshot_from_scan_result(scan_result)
+        if snapshot:
+            runs.append(snapshot)
+
+    if runs:
+        return runs
 
     for file_path in get_available_history_files(
         include_fallback_dirs=include_fallback_dirs
     ):
         runs.extend(_load_runs_from_file(file_path))
 
-    runs.sort(key=lambda run: run.get("timestamp", ""))
+    runs.sort(
+        key=lambda run: (
+            run.get("timestamp", ""),
+            run.get("stored_at", ""),
+            run.get("scan_id", ""),
+            run.get("profile", ""),
+            run.get("ticker_group", ""),
+        ),
+        reverse=True,
+    )
     return runs
 
 
@@ -129,6 +153,45 @@ def build_run_snapshot(filtered):
         ),
         "alerts": filtered.get("alerts", []),
         "qualified": qualified,
+    }
+
+
+def _build_run_snapshot_from_scan_result(scan_result):
+    if not isinstance(scan_result, dict) or not scan_result:
+        return None
+
+    scan_metadata = scan_result.get("scan_metadata", {})
+    storage_metadata = scan_result.get("storage_metadata", {})
+    summary = scan_result.get("summary", {})
+    qualified_trades = scan_result.get("qualified_trades", []) or []
+    alerts = scan_result.get("alerts", []) or []
+
+    return {
+        "scan_id": scan_metadata.get("scan_id"),
+        "timestamp": scan_metadata.get("generated_at"),
+        "stored_at": storage_metadata.get("stored_at"),
+        "profile": scan_metadata.get("profile"),
+        "ticker_group": scan_metadata.get("ticker_group"),
+        "execution_time": scan_metadata.get("execution_time_seconds"),
+        "alerts_count": len(alerts),
+        "qualified_count": len(qualified_trades),
+        "top_overall": _compact_signal_record(summary.get("top_overall")),
+        "alerts": [
+            compact_alert
+            for compact_alert in (
+                _compact_signal_record(alert)
+                for alert in alerts
+            )
+            if compact_alert
+        ],
+        "qualified": [
+            compact_trade
+            for compact_trade in (
+                _compact_signal_record(trade)
+                for trade in qualified_trades
+            )
+            if compact_trade
+        ],
     }
 
 
@@ -347,7 +410,7 @@ def _compute_historical_intelligence_components(limit=5):
         "data_sources": dict(source_counter),
         "history_available": bool(runs),
         "signal_history_available": signals_analyzed > 0,
-        "latest_run_timestamp": runs[-1].get("timestamp") if runs else None,
+        "latest_run_timestamp": runs[0].get("timestamp") if runs else None,
     }
 
     signal_quality_summary = {

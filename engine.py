@@ -177,6 +177,7 @@ def run_scan_engine(
     ror_weight=None,
     export_csv=False,
     selected_strategy_keys=None,
+    persist_history=True,
 ):
     settings = get_settings(
         {
@@ -303,6 +304,7 @@ def run_scan_engine(
     else:
         filtered["alerts_export_path"] = None
 
-    save_scan(filtered)
+    if persist_history:
+        save_scan(filtered)
 
     return filtered

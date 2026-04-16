@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from history import get_historical_intelligence_summary
+
 
 def build_trade_summary_row(trade: dict[str, Any]) -> dict[str, Any]:
     return {
@@ -57,7 +59,9 @@ def build_trade_detail_payload(trade: dict[str, Any], scan_result: dict[str, Any
 
 
 def build_history_screen_payload(scan_result: dict[str, Any]) -> dict[str, Any]:
-    intelligence = ((scan_result.get("history_context") or {}).get("historical_intelligence_summary") or {})
+    intelligence = get_historical_intelligence_summary(limit=5)
+    if not intelligence:
+        intelligence = ((scan_result.get("history_context") or {}).get("historical_intelligence_summary") or {})
     metadata = intelligence.get("metadata", {})
     signal_quality = intelligence.get("signal_quality_summary", {})
     feature_summary = intelligence.get("feature_summary", {})

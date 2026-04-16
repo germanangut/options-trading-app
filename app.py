@@ -1970,9 +1970,9 @@ def render_trend_insights():
 
     trend_indicator = "Stable"
     if len(qualified_counts) >= 2:
-        if qualified_counts[-1] > qualified_counts[0]:
+        if qualified_counts[0] > qualified_counts[-1]:
             trend_indicator = "Improving"
-        elif qualified_counts[-1] < qualified_counts[0]:
+        elif qualified_counts[0] < qualified_counts[-1]:
             trend_indicator = "Cooling"
 
     summary_panel = render_bordered_panel(

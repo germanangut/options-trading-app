@@ -21,6 +21,7 @@ DEFAULT_SETTINGS = {
     "dte_max": 35,
     "history_dir": ".history",
     "cache_dir": ".cache",
+    "scan_database_path": None,
     "strategy_config": {},
     "alpaca_api_key": None,
     "alpaca_api_secret": None,
@@ -35,6 +36,7 @@ ENV_TO_SETTINGS_MAP = {
     "ALPACA_TRADING_BASE_URL": "alpaca_trading_base_url",
     "HISTORY_DIR": "history_dir",
     "CACHE_DIR": "cache_dir",
+    "SCAN_DATABASE_PATH": "scan_database_path",
 }
 
 BASE_DIR = Path(__file__).resolve().parent

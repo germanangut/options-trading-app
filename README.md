@@ -117,6 +117,7 @@ ALPACA_DATA_BASE_URL=https://data.alpaca.markets
 ALPACA_TRADING_BASE_URL=https://paper-api.alpaca.markets
 HISTORY_DIR=.history
 CACHE_DIR=.cache
+SCAN_DATABASE_PATH=.history/scan_store.sqlite
 ```
 
 ## Common usage patterns
@@ -168,6 +169,30 @@ docker compose up --build
 ```
 
 If you want to preserve history and cache between runs, keep the mounted data directories in place and/or provide `.env` values as needed.
+
+## Persistence posture
+
+The backend now uses a durable SQLite scan store for canonical `ScanResult` persistence.
+
+- Backend storage backend: SQLite
+- Default location: `.history/scan_store.sqlite`
+- Override with: `SCAN_DATABASE_PATH=/path/to/scan_store.sqlite`
+
+Why SQLite for PU-10:
+
+- it is built into Python and adds no new infrastructure burden
+- it keeps `scan_id` and `trade_id` durable across backend restarts
+- it is reliable enough for a single-instance internal product phase
+- it provides a clean repository seam for a later migration to Postgres or another managed database
+
+Migration posture:
+
+- The repository abstraction lives under `backend/repositories/`
+- Service orchestration remains in the backend service layer
+- A future cloud/database migration should swap the repository implementation rather than changing trading logic or API contracts
+- Canonical persisted scans are the authoritative backend source for latest scan, trade detail, and history reads
+- Legacy JSONL history files are compatibility-only fallback inputs for older runs that predate canonical persistence
+- Future database migration should preserve repository contracts and swap the backend implementation rather than changing API or trading logic
 
 ## Project structure
 

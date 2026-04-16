@@ -10,11 +10,13 @@ from typing import Any
 
 from backend.contracts.scan_result import ScanRequest, build_scan_result
 from backend.services.scan_store import (
+    list_scan_results,
     load_latest_scan_result,
     load_scan_result,
     save_scan_result,
 )
 from engine import run_scan_engine
+from history import get_historical_intelligence_summary
 
 
 def run_scan(request: ScanRequest) -> dict:
@@ -30,9 +32,14 @@ def run_scan(request: ScanRequest) -> dict:
         min_consistency=request.min_consistency,
         export_csv=False,
         selected_strategy_keys=selected_strategy_keys,
+        persist_history=False,
     )
 
     scan_result = build_scan_result(raw_output, request)
+    save_scan_result(scan_result)
+    scan_result["history_context"] = {
+        "historical_intelligence_summary": get_historical_intelligence_summary(limit=5),
+    }
     return save_scan_result(scan_result)
 
 
@@ -54,3 +61,7 @@ def get_trade_by_id(scan_result: dict[str, Any], trade_id: str) -> dict[str, Any
                 return trade
 
     return None
+
+
+def list_scans(limit: int | None = None) -> list[dict[str, Any]]:
+    return list_scan_results(limit=limit, newest_first=True)
