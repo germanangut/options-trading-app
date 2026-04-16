@@ -2,7 +2,9 @@
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+
+from backend.api.dependencies.auth import require_current_user
 
 from backend.api.schemas.scans import (
     AlertItemResponse,
@@ -51,8 +53,8 @@ def _to_scan_request(payload: ScanRequestBody) -> ScanRequest:
     )
 
 
-def _load_required_scan(scan_id: str) -> dict[str, Any]:
-    scan_result = get_scan_by_id(scan_id)
+def _load_required_scan(scan_id: str, user_id: str) -> dict[str, Any]:
+    scan_result = get_scan_by_id(scan_id, user_id=user_id)
     if scan_result is None:
         raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' was not found.")
 
@@ -69,9 +71,12 @@ def _load_required_trade(scan_result: dict[str, Any], trade_id: str) -> dict[str
 
 @legacy_router.post("", response_model=ScanResultResponse)
 @v1_router.post("", response_model=ScanResultResponse)
-def post_scan(payload: ScanRequestBody) -> dict[str, Any]:
+def post_scan(
+    payload: ScanRequestBody,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, Any]:
     try:
-        return run_scan(_to_scan_request(payload))
+        return run_scan(_to_scan_request(payload), user_id=current_user["user_id"])
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except HTTPException:
@@ -82,8 +87,10 @@ def post_scan(payload: ScanRequestBody) -> dict[str, Any]:
 
 @legacy_router.get("/latest", response_model=ScanResultResponse)
 @v1_router.get("/latest", response_model=ScanResultResponse)
-def get_latest_scan_route() -> dict[str, Any]:
-    scan_result = get_latest_scan()
+def get_latest_scan_route(
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, Any]:
+    scan_result = get_latest_scan(user_id=current_user["user_id"])
     if scan_result is None:
         raise HTTPException(status_code=404, detail="No scan result is available yet.")
 
@@ -91,43 +98,65 @@ def get_latest_scan_route() -> dict[str, Any]:
 
 
 @v1_router.get("/{scan_id}", response_model=ScanResultResponse)
-def get_scan_by_id_route(scan_id: str) -> dict[str, Any]:
-    return _load_required_scan(scan_id)
+def get_scan_by_id_route(
+    scan_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, Any]:
+    return _load_required_scan(scan_id, current_user["user_id"])
 
 
 @v1_router.get("/{scan_id}/qualified-trades", response_model=list[TradeSummaryRow])
-def get_qualified_trades(scan_id: str) -> list[dict[str, Any]]:
-    scan_result = _load_required_scan(scan_id)
+def get_qualified_trades(
+    scan_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> list[dict[str, Any]]:
+    scan_result = _load_required_scan(scan_id, current_user["user_id"])
     return [build_trade_summary_row(trade) for trade in scan_result.get("qualified_trades", []) or []]
 
 
 @v1_router.get("/{scan_id}/alerts", response_model=list[AlertItemResponse])
-def get_alerts(scan_id: str) -> list[dict[str, Any]]:
-    scan_result = _load_required_scan(scan_id)
+def get_alerts(
+    scan_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> list[dict[str, Any]]:
+    scan_result = _load_required_scan(scan_id, current_user["user_id"])
     return [build_trade_summary_row(alert) for alert in scan_result.get("alerts", []) or []]
 
 
 @v1_router.get("/{scan_id}/daily-summary", response_model=DailySummaryResponse)
-def get_daily_summary(scan_id: str) -> dict[str, Any]:
-    scan_result = _load_required_scan(scan_id)
+def get_daily_summary(
+    scan_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, Any]:
+    scan_result = _load_required_scan(scan_id, current_user["user_id"])
     return build_daily_summary_payload(scan_result)
 
 
 @v1_router.get("/{scan_id}/portfolio", response_model=PortfolioScreenResponse)
-def get_portfolio(scan_id: str) -> dict[str, Any]:
-    scan_result = _load_required_scan(scan_id)
+def get_portfolio(
+    scan_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, Any]:
+    scan_result = _load_required_scan(scan_id, current_user["user_id"])
     return build_portfolio_screen_payload(scan_result)
 
 
 @v1_router.get("/{scan_id}/history", response_model=HistoryScreenResponse)
-def get_history(scan_id: str) -> dict[str, Any]:
-    scan_result = _load_required_scan(scan_id)
-    return build_history_screen_payload(scan_result)
+def get_history(
+    scan_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, Any]:
+    scan_result = _load_required_scan(scan_id, current_user["user_id"])
+    return build_history_screen_payload(scan_result, user_id=current_user["user_id"])
 
 
 @v1_router.get("/{scan_id}/trades/{trade_id}", response_model=TradeDetailResponse)
-def get_trade_detail(scan_id: str, trade_id: str) -> dict[str, Any]:
-    scan_result = _load_required_scan(scan_id)
+def get_trade_detail(
+    scan_id: str,
+    trade_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, Any]:
+    scan_result = _load_required_scan(scan_id, current_user["user_id"])
     trade = _load_required_trade(scan_result, trade_id)
     return build_trade_detail_payload(trade, scan_result)
 

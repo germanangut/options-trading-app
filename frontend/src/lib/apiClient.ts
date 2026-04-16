@@ -1,4 +1,5 @@
 import { API_BASE_URL } from "./constants";
+import { getAuthToken } from "../features/auth/authStorage";
 
 export class ApiError extends Error {
   status: number;
@@ -10,18 +11,22 @@ export class ApiError extends Error {
   }
 }
 
-type RequestInitWithBody = RequestInit & {
+type RequestInitWithBody = Omit<RequestInit, "body"> & {
   body?: unknown;
 };
 
 async function request<T>(path: string, init?: RequestInitWithBody): Promise<T> {
+  const authToken = getAuthToken();
+  const { body, ...requestInit } = init ?? {};
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
-      ...(init?.headers ?? {}),
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+      ...(requestInit.headers ?? {}),
     },
-    ...init,
-    body: init?.body !== undefined ? JSON.stringify(init.body) : undefined,
+    ...requestInit,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
   });
 
   if (!response.ok) {

@@ -96,7 +96,7 @@ def get_available_history_files(include_fallback_dirs=False):
     return history_files
 
 
-def load_all_history_runs(include_fallback_dirs=True):
+def load_all_history_runs(include_fallback_dirs=True, user_id: str | None = None):
     """Load history newest-first from canonical persisted scans when available.
 
     Persisted canonical scans are authoritative. Legacy JSONL files remain a
@@ -105,13 +105,16 @@ def load_all_history_runs(include_fallback_dirs=True):
     """
     runs = []
 
-    for scan_result in list_scan_results(newest_first=True):
+    for scan_result in list_scan_results(newest_first=True, user_id=user_id):
         snapshot = _build_run_snapshot_from_scan_result(scan_result)
         if snapshot:
             runs.append(snapshot)
 
     if runs:
         return runs
+
+    if user_id is not None:
+        return []
 
     for file_path in get_available_history_files(
         include_fallback_dirs=include_fallback_dirs
@@ -285,8 +288,8 @@ def _build_count_summary(counter, key_name, limit=5):
     ]
 
 
-def _compute_historical_intelligence_components(limit=5):
-    runs = load_all_history_runs(include_fallback_dirs=True)
+def _compute_historical_intelligence_components(limit=5, user_id: str | None = None):
+    runs = load_all_history_runs(include_fallback_dirs=True, user_id=user_id)
 
     ticker_counter = Counter()
     strategy_counter = Counter()
@@ -468,22 +471,22 @@ def _compute_historical_intelligence_components(limit=5):
     }
 
 
-def get_historical_intelligence_summary(limit=5):
+def get_historical_intelligence_summary(limit=5, user_id: str | None = None):
     """Return a consolidated, JSON-serializable summary of historical intelligence."""
-    return _compute_historical_intelligence_components(limit=limit)
+    return _compute_historical_intelligence_components(limit=limit, user_id=user_id)
 
 
-def compute_historical_signal_quality_summary(limit=5):
+def compute_historical_signal_quality_summary(limit=5, user_id: str | None = None):
     """Compute a lightweight historical summary of signal quality from stored runs."""
-    return get_historical_intelligence_summary(limit=limit).get(
+    return get_historical_intelligence_summary(limit=limit, user_id=user_id).get(
         "signal_quality_summary",
         {},
     )
 
 
-def compute_historical_signal_feature_summary(limit=5):
+def compute_historical_signal_feature_summary(limit=5, user_id: str | None = None):
     """Return the structured feature-extraction portion of the historical signal summary."""
-    return get_historical_intelligence_summary(limit=limit).get("feature_summary", {})
+    return get_historical_intelligence_summary(limit=limit, user_id=user_id).get("feature_summary", {})
 
 def compute_alert_stability():
     runs = load_history_runs()

@@ -145,7 +145,12 @@ class SQLiteScanRepository(ScanRepository):
             owner_user_id=row["owner_user_id"],
         )
 
-    def save_scan(self, scan_result: dict[str, Any]) -> dict[str, Any]:
+    def save_scan(
+        self,
+        scan_result: dict[str, Any],
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any]:
         scan_metadata = (scan_result or {}).get("scan_metadata") or {}
         scan_id = scan_metadata.get("scan_id")
         generated_at = _completed_at(scan_result)
@@ -154,7 +159,7 @@ class SQLiteScanRepository(ScanRepository):
             raise ValueError("Scan result is missing scan_metadata.scan_id.")
 
         stored_at = _utc_now_iso()
-        owner_user_id = ((scan_result or {}).get("storage_metadata") or {}).get("user_id")
+        owner_user_id = user_id or ((scan_result or {}).get("storage_metadata") or {}).get("user_id")
         normalized_scan_result = self._normalize_scan_result(
             scan_result,
             stored_at=stored_at,
@@ -202,31 +207,45 @@ class SQLiteScanRepository(ScanRepository):
 
         return normalized_scan_result
 
-    def get_scan(self, scan_id: str) -> dict[str, Any] | None:
+    def get_scan(
+        self,
+        scan_id: str,
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
         if not scan_id:
             return None
 
+        query = """
+            SELECT scan_result_json, stored_at, schema_version, storage_backend, owner_user_id
+            FROM scans
+            WHERE scan_id = ?
+        """
+        parameters: tuple[Any, ...] = (scan_id,)
+        if user_id is not None:
+            query = f"{query} AND owner_user_id = ?"
+            parameters = (scan_id, user_id)
+
         with self._connect() as connection:
-            row = connection.execute(
-                """
-                SELECT scan_result_json, stored_at, schema_version, storage_backend, owner_user_id
-                FROM scans
-                WHERE scan_id = ?
-                """,
-                (scan_id,),
-            ).fetchone()
+            row = connection.execute(query, parameters).fetchone()
 
         return self._deserialize_scan(row)
 
-    def get_latest_scan(self) -> dict[str, Any] | None:
+    def get_latest_scan(self, *, user_id: str | None = None) -> dict[str, Any] | None:
+        query = """
+            SELECT scan_result_json, stored_at, schema_version, storage_backend, owner_user_id
+            FROM scans
+        """
+        parameters: tuple[Any, ...] = ()
+        if user_id is not None:
+            query = f"{query} WHERE owner_user_id = ?"
+            parameters = (user_id,)
+        query = (
+            f"{query} ORDER BY COALESCE(generated_at, stored_at) DESC, stored_at DESC, scan_id DESC"
+        )
+
         with self._connect() as connection:
-            rows = connection.execute(
-                """
-                SELECT scan_result_json, stored_at, schema_version, storage_backend, owner_user_id
-                FROM scans
-                ORDER BY COALESCE(generated_at, stored_at) DESC, stored_at DESC, scan_id DESC
-                """,
-            ).fetchall()
+            rows = connection.execute(query, parameters).fetchall()
 
         for row in rows:
             scan = self._deserialize_scan(row)
@@ -240,17 +259,21 @@ class SQLiteScanRepository(ScanRepository):
         *,
         limit: int | None = None,
         newest_first: bool = True,
+        user_id: str | None = None,
     ) -> list[dict[str, Any]]:
         order = "DESC" if newest_first else "ASC"
-        query = (
-            "SELECT scan_result_json, stored_at, schema_version, storage_backend, owner_user_id FROM scans "
-            f"ORDER BY COALESCE(generated_at, stored_at) {order}, stored_at {order}, scan_id {order}"
-        )
+        query = "SELECT scan_result_json, stored_at, schema_version, storage_backend, owner_user_id FROM scans"
         parameters: tuple[Any, ...] = ()
+        if user_id is not None:
+            query = f"{query} WHERE owner_user_id = ?"
+            parameters = (user_id,)
+        query = (
+            f"{query} ORDER BY COALESCE(generated_at, stored_at) {order}, stored_at {order}, scan_id {order}"
+        )
 
         if isinstance(limit, int) and limit > 0:
             query = f"{query} LIMIT ?"
-            parameters = (limit,)
+            parameters = (*parameters, limit)
 
         with self._connect() as connection:
             rows = connection.execute(query, parameters).fetchall()
@@ -263,11 +286,17 @@ class SQLiteScanRepository(ScanRepository):
 
         return scans
 
-    def get_trade(self, scan_id: str, trade_id: str) -> dict[str, Any] | None:
+    def get_trade(
+        self,
+        scan_id: str,
+        trade_id: str,
+        *,
+        user_id: str | None = None,
+    ) -> dict[str, Any] | None:
         if not scan_id or not trade_id:
             return None
 
-        scan_result = self.get_scan(scan_id)
+        scan_result = self.get_scan(scan_id, user_id=user_id)
         if not scan_result:
             return None
 
@@ -278,6 +307,12 @@ class SQLiteScanRepository(ScanRepository):
 
         return None
 
-    def clear(self) -> None:
+    def clear(self, *, user_id: str | None = None) -> None:
         with self._connect() as connection:
-            connection.execute("DELETE FROM scans")
+            if user_id is None:
+                connection.execute("DELETE FROM scans")
+            else:
+                connection.execute(
+                    "DELETE FROM scans WHERE owner_user_id = ?",
+                    (user_id,),
+                )

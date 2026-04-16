@@ -35,8 +35,8 @@ export function OverviewPage() {
   return (
     <div className="grid gap-6">
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <MetricCard label={overview.kpis[0].label} value={overview.kpis[0].value} />
-        <MetricCard label={overview.kpis[1].label} value={overview.kpis[1].value} />
+        <MetricCard label={overview.kpis[0].label} value={overview.kpis[0].value ?? "-"} />
+        <MetricCard label={overview.kpis[1].label} value={overview.kpis[1].value ?? "-"} />
         <MetricCard label="Provider" value={overview.metadata.provider ?? "Unknown"} />
         <MetricCard label="Runtime" value={formatDuration(overview.kpis[3].value as number | null)} />
       </section>

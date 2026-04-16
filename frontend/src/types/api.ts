@@ -12,6 +12,26 @@ export type ScanRequest = {
   use_mock_data: boolean | null;
 };
 
+export type CredentialsPayload = {
+  email: string;
+  password: string;
+};
+
+export type CurrentUser = {
+  user_id: string;
+  email: string;
+  auth_provider: string;
+  created_at: string;
+  last_login_at: string | null;
+};
+
+export type AuthSession = {
+  access_token: string;
+  token_type: string;
+  expires_at: string;
+  user: CurrentUser;
+};
+
 export type ScanMetadataBasics = {
   generated_at: string;
   profile: string;

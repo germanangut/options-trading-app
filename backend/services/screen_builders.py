@@ -58,8 +58,12 @@ def build_trade_detail_payload(trade: dict[str, Any], scan_result: dict[str, Any
     }
 
 
-def build_history_screen_payload(scan_result: dict[str, Any]) -> dict[str, Any]:
-    intelligence = get_historical_intelligence_summary(limit=5)
+def build_history_screen_payload(
+    scan_result: dict[str, Any],
+    *,
+    user_id: str | None = None,
+) -> dict[str, Any]:
+    intelligence = get_historical_intelligence_summary(limit=5, user_id=user_id)
     if not intelligence:
         intelligence = ((scan_result.get("history_context") or {}).get("historical_intelligence_summary") or {})
     metadata = intelligence.get("metadata", {})

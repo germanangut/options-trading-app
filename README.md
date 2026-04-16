@@ -118,6 +118,7 @@ ALPACA_TRADING_BASE_URL=https://paper-api.alpaca.markets
 HISTORY_DIR=.history
 CACHE_DIR=.cache
 SCAN_DATABASE_PATH=.history/scan_store.sqlite
+AUTH_SESSION_TTL_HOURS=168
 ```
 
 ## Common usage patterns
@@ -193,6 +194,23 @@ Migration posture:
 - Canonical persisted scans are the authoritative backend source for latest scan, trade detail, and history reads
 - Legacy JSONL history files are compatibility-only fallback inputs for older runs that predate canonical persistence
 - Future database migration should preserve repository contracts and swap the backend implementation rather than changing API or trading logic
+
+## Auth and user ownership posture
+
+PU-11 adds app-owned identity and route protection without changing scan logic.
+
+- Authentication is local to this app and uses email/password plus opaque bearer sessions
+- User identity is not coupled to Alpaca or any broker account
+- Persisted scans are now user-owned through `owner_user_id`
+- Protected backend routes return only the authenticated user's latest scan, trade detail, alerts, portfolio, and history views
+- A separate `broker_connections` table exists as a future seam for broker linking without replacing app identity
+
+Current auth routes:
+
+- `POST /auth/register`
+- `POST /auth/login`
+- `POST /auth/logout`
+- `GET /auth/me`
 
 ## Project structure
 

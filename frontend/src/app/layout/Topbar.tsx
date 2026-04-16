@@ -1,10 +1,13 @@
 import { formatPageTitle } from "../../lib/formatters";
+import { useAuth } from "../../features/auth/AuthContext";
 
 type TopbarProps = {
   pathname: string;
 };
 
 export function Topbar({ pathname }: TopbarProps) {
+  const auth = useAuth();
+
   return (
     <header className="border-b border-slate-200 bg-white/90 backdrop-blur">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
@@ -14,8 +17,19 @@ export function Topbar({ pathname }: TopbarProps) {
           </p>
           <h2 className="text-lg font-semibold text-ink-1">{formatPageTitle(pathname)}</h2>
         </div>
-        <div className="rounded-full border border-slate-200 bg-surface-1 px-3 py-1 text-xs font-medium text-ink-2">
-          Backend-driven UI foundation
+        <div className="flex items-center gap-3">
+          <div className="rounded-full border border-slate-200 bg-surface-1 px-3 py-1 text-xs font-medium text-ink-2">
+            {auth.currentUser?.email ?? "Authenticated session"}
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              void auth.logout();
+            }}
+            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-semibold text-ink-2 transition hover:bg-surface-1"
+          >
+            Logout
+          </button>
         </div>
       </div>
     </header>

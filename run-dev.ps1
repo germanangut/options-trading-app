@@ -46,6 +46,9 @@ if ($npmCommand.PSObject.Properties["Source"] -and $npmCommand.Source) {
 $npmPath = (Resolve-Path $npmPath).Path
 $frontendNodeModules = Join-Path $frontendDir "node_modules"
 $shouldInstallFrontendDeps = $InstallFrontendDeps -or -not (Test-Path $frontendNodeModules)
+$backendUrl = "http://127.0.0.1:8000/docs"
+$frontendUrl = "http://127.0.0.1:5173"
+$streamlitUrl = "http://127.0.0.1:8501"
 
 function Start-DevWindow {
     param(
@@ -91,6 +94,44 @@ Read-Host 'Press Enter to close this window'
 "@
 }
 
+function Test-UrlReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Url
+    )
+
+    try {
+        $response = Invoke-WebRequest -UseBasicParsing -Method Get -Uri $Url -TimeoutSec 2
+        return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
+    } catch {
+        return $false
+    }
+}
+
+function Wait-ForUrlReady {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Name,
+        [Parameter(Mandatory = $true)]
+        [string]$Url,
+        [int]$Attempts = 20,
+        [int]$DelaySeconds = 1
+    )
+
+    for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+        if (Test-UrlReady -Url $Url) {
+            Write-Host "- $Name ready: $Url" -ForegroundColor Green
+            return $true
+        }
+
+        Start-Sleep -Seconds $DelaySeconds
+    }
+
+    Write-Host "- $Name not confirmed yet: $Url" -ForegroundColor Yellow
+    Write-Host "  Check the spawned '$Name' window for startup errors." -ForegroundColor Yellow
+    return $false
+}
+
 $backendCommand = "& '$venvPython' -m uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload"
 Start-DevWindow -Title "Options Backend" -WorkingDirectory $repoRoot -Command $backendCommand
 
@@ -120,11 +161,24 @@ if ($IncludeStreamlit) {
 
 Write-Host ""
 Write-Host "Launched development windows:" -ForegroundColor Cyan
-Write-Host "- FastAPI backend: http://127.0.0.1:8000" -ForegroundColor Green
-Write-Host "- React frontend:  http://127.0.0.1:5173" -ForegroundColor Green
+Write-Host "- FastAPI backend target: http://127.0.0.1:8000" -ForegroundColor Cyan
+Write-Host "- React frontend target:  http://127.0.0.1:5173" -ForegroundColor Cyan
 
 if ($IncludeStreamlit) {
-    Write-Host "- Streamlit app:   http://127.0.0.1:8501" -ForegroundColor Green
+    Write-Host "- Streamlit target:       http://127.0.0.1:8501" -ForegroundColor Cyan
+}
+
+Write-Host ""
+Write-Host "Verifying service startup..." -ForegroundColor Cyan
+Wait-ForUrlReady -Name "FastAPI backend" -Url $backendUrl | Out-Null
+if ($shouldInstallFrontendDeps) {
+    Wait-ForUrlReady -Name "React frontend" -Url $frontendUrl -Attempts 120 -DelaySeconds 1 | Out-Null
+} else {
+    Wait-ForUrlReady -Name "React frontend" -Url $frontendUrl -Attempts 45 -DelaySeconds 1 | Out-Null
+}
+
+if ($IncludeStreamlit) {
+    Wait-ForUrlReady -Name "Streamlit app" -Url $streamlitUrl -Attempts 45 -DelaySeconds 1 | Out-Null
 }
 
 Write-Host ""

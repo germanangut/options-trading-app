@@ -19,7 +19,11 @@ from engine import run_scan_engine
 from history import get_historical_intelligence_summary
 
 
-def run_scan(request: ScanRequest) -> dict:
+def run_scan(
+    request: ScanRequest,
+    *,
+    user_id: str | None = None,
+) -> dict:
     """Run the existing scan engine and return the canonical ScanResult."""
     selected_strategy_keys = request.selected_strategy_keys or None
 
@@ -36,19 +40,22 @@ def run_scan(request: ScanRequest) -> dict:
     )
 
     scan_result = build_scan_result(raw_output, request)
-    save_scan_result(scan_result)
+    save_scan_result(scan_result, user_id=user_id)
     scan_result["history_context"] = {
-        "historical_intelligence_summary": get_historical_intelligence_summary(limit=5),
+        "historical_intelligence_summary": get_historical_intelligence_summary(
+            limit=5,
+            user_id=user_id,
+        ),
     }
-    return save_scan_result(scan_result)
+    return save_scan_result(scan_result, user_id=user_id)
 
 
-def get_latest_scan() -> dict[str, Any] | None:
-    return load_latest_scan_result()
+def get_latest_scan(*, user_id: str | None = None) -> dict[str, Any] | None:
+    return load_latest_scan_result(user_id=user_id)
 
 
-def get_scan_by_id(scan_id: str) -> dict[str, Any] | None:
-    return load_scan_result(scan_id)
+def get_scan_by_id(scan_id: str, *, user_id: str | None = None) -> dict[str, Any] | None:
+    return load_scan_result(scan_id, user_id=user_id)
 
 
 def get_trade_by_id(scan_result: dict[str, Any], trade_id: str) -> dict[str, Any] | None:
@@ -63,5 +70,9 @@ def get_trade_by_id(scan_result: dict[str, Any], trade_id: str) -> dict[str, Any
     return None
 
 
-def list_scans(limit: int | None = None) -> list[dict[str, Any]]:
-    return list_scan_results(limit=limit, newest_first=True)
+def list_scans(
+    limit: int | None = None,
+    *,
+    user_id: str | None = None,
+) -> list[dict[str, Any]]:
+    return list_scan_results(limit=limit, newest_first=True, user_id=user_id)

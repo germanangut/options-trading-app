@@ -22,6 +22,7 @@ DEFAULT_SETTINGS = {
     "history_dir": ".history",
     "cache_dir": ".cache",
     "scan_database_path": None,
+    "auth_session_ttl_hours": 168,
     "strategy_config": {},
     "alpaca_api_key": None,
     "alpaca_api_secret": None,
@@ -37,6 +38,7 @@ ENV_TO_SETTINGS_MAP = {
     "HISTORY_DIR": "history_dir",
     "CACHE_DIR": "cache_dir",
     "SCAN_DATABASE_PATH": "scan_database_path",
+    "AUTH_SESSION_TTL_HOURS": "auth_session_ttl_hours",
 }
 
 BASE_DIR = Path(__file__).resolve().parent
