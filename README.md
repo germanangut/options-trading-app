@@ -150,6 +150,7 @@ python main.py --profile balanced --group tech --export-csv
 ## Docker and local container runs
 
 For a simple VM-based operational setup, see `infra/vm_deployment.md`. For the current private/internal access approach, see `infra/access_model.md`.
+For the current cloud deployment path using Render and Vercel, see `infra/render_vercel_deployment.md`.
 
 Build the image:
 
@@ -278,6 +279,14 @@ Existing runtime variables still apply, plus the following observability-oriente
 - `SCAN_DATABASE_PATH`
 - `AUTH_SESSION_TTL_HOURS`
 - `CORS_ALLOW_ORIGINS`
+- `CORS_ALLOW_ORIGIN_REGEX`
+
+### Cloud deployment
+
+- Backend target: Render
+- Frontend target: Vercel
+- Backend container/runtime details are defined in [Dockerfile](Dockerfile) and [render.yaml](render.yaml)
+- Frontend deployment settings are documented in [infra/render_vercel_deployment.md](infra/render_vercel_deployment.md) and [frontend/vercel.json](frontend/vercel.json)
 
 ### Deferred to PU-13
 

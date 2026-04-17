@@ -4,22 +4,35 @@ app:
     language: python
     container_python: "3.11"
   entrypoints:
-    ui:
-      file: app.py
-      framework: streamlit
-      command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501
-    cli:
-      file: main.py
-      command: python main.py
+    api:
+      file: backend/api/main.py
+      framework: fastapi
+      command: uvicorn backend.api.main:app --host 0.0.0.0 --port ${PORT:-8000}
+    frontend:
+      directory: frontend
+      framework: react-vite
+      build_command: npm run build
+      output_directory: dist
 
 network:
-  port: 8501
+  port: 8000
   protocol: http
   bind_address: 0.0.0.0
 
 environment:
   required: []
   optional:
+    - name: APP_ENV
+      default: development
+      purpose: Selects the runtime environment profile.
+    - name: LOG_LEVEL
+      default: INFO
+      purpose: Controls backend log verbosity.
+    - name: LOG_FORMAT
+      default: json
+      purpose: Reserved seam for structured log format selection.
+    - name: SENTRY_DSN
+      purpose: Optional external error tracking DSN.
     - name: ALPACA_API_KEY
       purpose: Enables live Alpaca market data access when provided.
     - name: ALPACA_API_SECRET
@@ -36,8 +49,26 @@ environment:
     - name: CACHE_DIR
       default: .cache
       purpose: Overrides the directory used for cached market data.
+    - name: SCAN_DATABASE_PATH
+      default: .history/scan_store.sqlite
+      purpose: Overrides the SQLite database path used for scans and auth state.
+    - name: AUTH_SESSION_TTL_HOURS
+      default: 168
+      purpose: Controls opaque session lifetime in hours.
+    - name: CORS_ALLOW_ORIGINS
+      purpose: Comma-separated exact origins allowed to call the backend.
+    - name: CORS_ALLOW_ORIGIN_REGEX
+      purpose: Optional regex for preview frontend origins, such as Vercel previews.
+    - name: VITE_API_BASE_URL
+      purpose: Frontend-only variable pointing the deployed UI to the backend base URL.
+    - name: VITE_AUTH_TOKEN_STORAGE_KEY
+      default: options-platform.auth-token
+      purpose: Frontend-only storage key for persisted bearer tokens.
 
 storage:
+  database:
+    path: .history/scan_store.sqlite
+    env_var: SCAN_DATABASE_PATH
   history:
     path: .history
     env_var: HISTORY_DIR
@@ -49,8 +80,8 @@ container:
   dockerfile: Dockerfile
   base_image: python:3.11-slim
   workdir: /app
-  exposed_port: 8501
-  default_command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+  exposed_port: 8000
+  default_command: uvicorn backend.api.main:app --host 0.0.0.0 --port ${PORT:-8000}
 
 ci:
   workflow: .github/workflows/ci.yml

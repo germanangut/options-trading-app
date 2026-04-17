@@ -95,6 +95,7 @@ async def request_context_middleware(request: Request, call_next):
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_cors_origins(),
+    allow_origin_regex=os.getenv("CORS_ALLOW_ORIGIN_REGEX") or None,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],
@@ -119,7 +120,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "backend.api.main:app",
-        host="127.0.0.1",
-        port=8000,
+        host="0.0.0.0",
+        port=int(os.getenv("PORT", "8000")),
         reload=False,
     )

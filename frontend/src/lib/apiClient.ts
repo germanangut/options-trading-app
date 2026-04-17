@@ -19,6 +19,10 @@ async function request<T>(path: string, init?: RequestInitWithBody): Promise<T> 
   const authToken = getAuthToken();
   const { body, ...requestInit } = init ?? {};
 
+  if (!API_BASE_URL && import.meta.env.PROD) {
+    throw new ApiError("VITE_API_BASE_URL is not configured.", 500);
+  }
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
@@ -33,8 +37,13 @@ async function request<T>(path: string, init?: RequestInitWithBody): Promise<T> 
     let detail = "Request failed.";
 
     try {
-      const payload = (await response.json()) as { detail?: string };
-      if (payload?.detail) {
+      const payload = (await response.json()) as {
+        detail?: string;
+        error?: { message?: string };
+      };
+      if (payload?.error?.message) {
+        detail = payload.error.message;
+      } else if (payload?.detail) {
         detail = payload.detail;
       }
     } catch {

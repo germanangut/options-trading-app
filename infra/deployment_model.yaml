@@ -2,15 +2,21 @@ system:
   name: options-trading-app
 
 components:
-  app:
-    type: single containerized Python application
+  backend_api:
+    type: containerized Python API application
     entrypoints:
-      ui: app.py
-      cli: main.py
+      api: backend.api.main:app
     runtime:
       image_source: Dockerfile
-      default_command: streamlit run app.py --server.address=0.0.0.0 --server.port=8501
+      default_command: uvicorn backend.api.main:app --host 0.0.0.0 --port ${PORT:-8000}
     state: stateless compute with filesystem-backed runtime data
+
+  frontend_web:
+    type: static React application
+    runtime:
+      platform: vercel
+      build_command: npm run build
+      output_directory: dist
 
   data_provider:
     type: external API integration
@@ -20,43 +26,61 @@ components:
     fallback: built-in mock data when credentials are not configured
 
   storage:
-    type: local filesystem persistence
+    type: filesystem-backed SQLite persistence
     stateful_parts:
-      - .history for scan history and trend analysis
-      - .cache for cached market data
-    access_mode: mounted directories in containerized local runs
+      - SQLite database file for scans and auth sessions
+      - history directory for compatibility and historical context
+      - cache directory for cached market data
+    access_mode: mounted disk in Render plus local directories in development
 
 interfaces:
-  ui:
-    type: web UI
-    framework: Streamlit
-    port: 8501
+  backend_api:
+    type: web API
+    framework: FastAPI
+    port: 8000
     protocol: http
-  cli:
-    type: command-line interface
-    command: python main.py
+  frontend_ui:
+    type: web UI
+    framework: React + Vite
+    deployment_platform: Vercel
 
 environment:
   required: []
   optional:
+    - APP_ENV
+    - LOG_LEVEL
+    - LOG_FORMAT
+    - SENTRY_DSN
     - ALPACA_API_KEY
     - ALPACA_API_SECRET
     - ALPACA_DATA_BASE_URL
     - ALPACA_TRADING_BASE_URL
     - HISTORY_DIR
     - CACHE_DIR
+    - SCAN_DATABASE_PATH
+    - AUTH_SESSION_TTL_HOURS
+    - CORS_ALLOW_ORIGINS
+    - CORS_ALLOW_ORIGIN_REGEX
+    - VITE_API_BASE_URL
+    - VITE_AUTH_TOKEN_STORAGE_KEY
 
 deployment:
-  model: single-service container deployment
+  model: split frontend/backend cloud deployment
+  targets:
+    backend: Render
+    frontend: Vercel
   scaling:
     current: single instance
     mode: manual
   state:
-    application_container: stateless
-    filesystem_data: stateful
+    backend_container: stateless
+    render_disk: stateful
   local_runtime:
     orchestrator: docker compose
     service_count: 1
+  auto_deploy:
+    source: GitHub
+    branch: main
 
 ci_cd:
   workflow: .github/workflows/ci.yml
@@ -69,10 +93,10 @@ ci_cd:
 
 future:
   possible_targets:
-    - container hosting platform
-    - virtual machine running Docker
-    - managed container service
+    - managed database backend
+    - richer multi-environment deployment model
+    - managed container + preview environment strategy
   likely_extensions:
-    - external persistent volume for history and cache
+    - external persistent database replacing SQLite
     - secret-managed environment variable injection
-    - deployment-stage workflows after CI validation is stabilized
+    - deployment promotion workflows after the fast path is proven

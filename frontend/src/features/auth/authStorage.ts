@@ -1,4 +1,5 @@
-const AUTH_TOKEN_STORAGE_KEY = "options-platform.auth-token";
+const AUTH_TOKEN_STORAGE_KEY =
+  import.meta.env.VITE_AUTH_TOKEN_STORAGE_KEY ?? "options-platform.auth-token";
 
 export function getAuthToken(): string | null {
   if (typeof window === "undefined") {
