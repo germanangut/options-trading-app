@@ -77,6 +77,31 @@ def test_ready_endpoint_reports_dependency_status(monkeypatch):
         shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
 
 
+def test_ops_cors_endpoint_reports_effective_configuration(monkeypatch):
+    workspace_tmp_dir = Path("tmp_test_observability_api") / str(uuid.uuid4())
+    workspace_tmp_dir.mkdir(parents=True, exist_ok=True)
+    _force_mock_mode(monkeypatch, workspace_tmp_dir)
+    monkeypatch.delenv("CORS_ALLOW_ORIGINS", raising=False)
+    monkeypatch.delenv("CORS_ALLOW_ORIGIN_REGEX", raising=False)
+
+    try:
+        client = TestClient(app)
+        response = client.get("/ops/cors")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "ok"
+        assert "http://127.0.0.1:5173" in body["cors"]["allow_origins"]
+        assert body["cors"]["allow_origin_regex"] == (
+            r"^https://options-trading-app(?:-[a-z0-9-]+)?\.vercel\.app$"
+        )
+        assert body["cors"]["source"] == {
+            "origins": "default",
+            "origin_regex": "default",
+        }
+    finally:
+        shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
+
+
 def test_authenticated_scan_request_echoes_supplied_request_id(monkeypatch):
     workspace_tmp_dir = Path("tmp_test_observability_api") / str(uuid.uuid4())
     workspace_tmp_dir.mkdir(parents=True, exist_ok=True)

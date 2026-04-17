@@ -7,6 +7,7 @@ from uuid import uuid4
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
+from backend.api.cors import allowed_cors_origin_regex, allowed_cors_origins
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.routes.auth import router as auth_router
 from backend.api.routes.ops import router as ops_router
@@ -20,36 +21,6 @@ from settings import get_safe_settings_summary
 configure_logging()
 logger = get_logger(__name__)
 initialize_error_tracking()
-
-
-DEFAULT_CORS_ORIGINS = [
-    "http://127.0.0.1:5173",
-    "http://localhost:5173",
-    "http://127.0.0.1:4173",
-    "http://localhost:4173",
-]
-DEFAULT_VERCEL_CORS_ORIGIN_REGEX = (
-    r"^https://options-trading-app(?:-[a-z0-9-]+)?\.vercel\.app$"
-)
-
-
-def _allowed_cors_origins() -> list[str]:
-    configured = os.getenv("CORS_ALLOW_ORIGINS")
-    if configured:
-        return [origin.strip() for origin in configured.split(",") if origin.strip()]
-
-    return DEFAULT_CORS_ORIGINS
-
-
-def _allowed_cors_origin_regex() -> str | None:
-    configured = (os.getenv("CORS_ALLOW_ORIGIN_REGEX") or "").strip()
-    if configured:
-        return configured
-
-    if os.getenv("CORS_ALLOW_ORIGINS"):
-        return None
-
-    return DEFAULT_VERCEL_CORS_ORIGIN_REGEX
 
 
 app = FastAPI(
@@ -111,8 +82,8 @@ async def request_context_middleware(request: Request, call_next):
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_allowed_cors_origins(),
-    allow_origin_regex=_allowed_cors_origin_regex(),
+    allow_origins=allowed_cors_origins(),
+    allow_origin_regex=allowed_cors_origin_regex(),
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"],

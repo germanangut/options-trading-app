@@ -5,6 +5,7 @@ from pathlib import Path
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 
+from backend.api.cors import cors_configuration_summary
 from backend.repositories.factory import get_auth_repository, get_scan_repository
 from data_provider import has_alpaca_credentials
 from settings import get_safe_settings_summary, get_settings
@@ -63,3 +64,11 @@ def readiness_check() -> JSONResponse:
             "checks": checks,
         },
     )
+
+
+@router.get("/ops/cors")
+def cors_check() -> dict[str, object]:
+    return {
+        "status": "ok",
+        "cors": cors_configuration_summary(),
+    }
