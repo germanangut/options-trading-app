@@ -1,19 +1,22 @@
 import { NavLink } from "react-router-dom";
 
+import { SectionFrame } from "../../components/ui/SectionFrame";
+import { MetricStrip } from "../../components/ui/MetricStrip";
+import { ActionRow } from "../../components/ui/ActionRow";
 import { Banner } from "../../components/ui/Banner";
 import { Chip } from "../../components/ui/Chip";
-import { Card } from "../../components/ui/Card";
 import { EmptyState } from "../../components/ui/EmptyState";
 import { useLatestScan } from "../../features/scans/hooks/useLatestScan";
 import { useScanControls } from "../../features/scans/hooks/useScanControls";
 import { useRunScan } from "../../features/scans/hooks/useRunScan";
+import { selectSidebarWorkflowModel } from "../../features/scans/selectors/decisionExperienceSelectors";
 import {
   NAV_ITEMS,
   PROFILE_OPTIONS,
   STRATEGY_OPTIONS,
   TICKER_GROUP_OPTIONS,
 } from "../../lib/constants";
-import { formatDuration, formatTradeLabel } from "../../lib/formatters";
+import { formatDuration } from "../../lib/formatters";
 
 function linkClassName(isActive: boolean) {
   return [
@@ -28,8 +31,7 @@ export function Sidebar() {
   const latestScan = useLatestScan();
   const runScan = useRunScan();
   const controls = useScanControls(latestScan.data);
-  const latestSummary = latestScan.data?.summary;
-  const latestMetadata = latestScan.data?.scan_metadata;
+  const workflow = selectSidebarWorkflowModel(latestScan.data, controls.request, controls.mode, runScan.isPending);
 
   const disableRun = runScan.isPending || controls.request.selected_strategy_keys.length === 0;
 
@@ -41,12 +43,16 @@ export function Sidebar() {
             Options Platform
           </p>
           <div>
-            <h1 className="text-xl font-semibold text-ink-1">React Foundation</h1>
+            <h1 className="text-xl font-semibold text-ink-1">Decision Workflow</h1>
             <p className="text-sm text-ink-2">
-              Thin frontend shell over the existing backend scan contract.
+              Reconstructed scan workflow over the existing backend contract.
             </p>
           </div>
         </div>
+
+        <Banner tone={workflow.readiness.tone} title={workflow.readiness.title}>
+          {workflow.readiness.message}
+        </Banner>
 
         <nav className="grid gap-1">
           {NAV_ITEMS.map((item) => (
@@ -57,7 +63,11 @@ export function Sidebar() {
           ))}
         </nav>
 
-        <Card title="Scan Controls" subtitle="First product-ready scan control surface for the React shell.">
+        <SectionFrame
+          eyebrow={workflow.modeFrame.eyebrow}
+          title={workflow.modeFrame.title}
+          subtitle={workflow.modeFrame.description}
+        >
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -81,6 +91,24 @@ export function Sidebar() {
                 Expert
               </button>
             </div>
+
+            {controls.mode === "guided" ? (
+              <div className="rounded-xl border border-teal-200 bg-teal-50/70 px-3 py-3 text-sm text-ink-2">
+                Guided mode emphasizes the small set of controls that most directly change what gets reviewed first.
+              </div>
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-surface-0 px-3 py-3 text-sm text-ink-2">
+                Expert mode exposes the full request surface without changing backend truth or ranking behavior.
+              </div>
+            )}
+
+            <SectionFrame eyebrow="Plan Summary" title={workflow.planSummary.title} subtitle="Confirm the current setup before you run.">
+              <div className="grid gap-2 text-sm text-ink-2">
+                {workflow.planSummary.lines.map((line) => (
+                  <p key={line} className="rounded-xl bg-surface-2 px-3 py-3">{line}</p>
+                ))}
+              </div>
+            </SectionFrame>
 
             <label className="grid gap-1 text-sm text-ink-2">
               <span className="font-medium">Profile</span>
@@ -177,11 +205,11 @@ export function Sidebar() {
               </div>
             ) : (
               <div className="rounded-xl bg-surface-2 p-3 text-sm text-ink-2">
-                Guided mode keeps the full backend scan request but surfaces only the highest-value controls.
+                Guided mode keeps the current request stable while presenting the clearest controls first.
               </div>
             )}
 
-            <div className="flex gap-2">
+            <ActionRow>
               <button
                 type="button"
                 onClick={() => runScan.mutate(controls.request)}
@@ -197,7 +225,7 @@ export function Sidebar() {
               >
                 Reset
               </button>
-            </div>
+            </ActionRow>
 
             {runScan.isError ? (
               <Banner tone="danger" title="Scan failed">
@@ -205,37 +233,32 @@ export function Sidebar() {
               </Banner>
             ) : null}
           </div>
-        </Card>
+        </SectionFrame>
 
-        <Card title="Latest Scan Snapshot" subtitle="Most recent backend response context.">
+        <SectionFrame eyebrow="Latest Scan" title="Snapshot" subtitle="Most recent backend response context for the workflow.">
           {latestScan.isLoading ? (
             <EmptyState title="Loading latest scan" message="Waiting for the current summary from the backend." />
-          ) : latestSummary && latestMetadata ? (
+          ) : workflow.latestSnapshot ? (
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2">
-                <Chip tone="neutral">{latestMetadata.profile}</Chip>
-                <Chip tone="neutral">{latestMetadata.ticker_group}</Chip>
-                <Chip tone="neutral">{formatDuration(latestMetadata.execution_time_seconds)}</Chip>
+                <Chip tone="neutral">{workflow.latestSnapshot.profile}</Chip>
+                <Chip tone="neutral">{workflow.latestSnapshot.tickerGroup}</Chip>
+                <Chip tone="neutral">{formatDuration(workflow.latestSnapshot.runtime)}</Chip>
               </div>
-              <div className="grid gap-2 text-sm text-ink-2">
-                <div className="flex items-center justify-between">
-                  <span>Qualified</span>
-                  <span className="font-medium text-ink-1">{latestSummary.qualified_count}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Near Misses</span>
-                  <span className="font-medium text-ink-1">{latestSummary.near_miss_count}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span>Alerts</span>
-                  <span className="font-medium text-ink-1">{latestScan.data?.alerts.length ?? 0}</span>
-                </div>
-              </div>
-              {latestSummary.top_overall ? (
+              <MetricStrip
+                items={[
+                  { label: "Qualified", value: workflow.latestSnapshot.qualified, tone: "success" },
+                  { label: "Alerts", value: workflow.latestSnapshot.alerts, tone: "warning" },
+                  { label: "Runtime", value: formatDuration(workflow.latestSnapshot.runtime), tone: "accent" },
+                ]}
+                columns={3}
+                compact
+              />
+              {workflow.latestSnapshot.topTrade ? (
                 <div className="rounded-xl bg-surface-2 p-3">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-ink-3">Top Opportunity</p>
                   <p className="mt-1 text-sm font-semibold text-ink-1">
-                    {formatTradeLabel(latestSummary.top_overall)}
+                    {workflow.latestSnapshot.topTrade}
                   </p>
                 </div>
               ) : null}
@@ -243,15 +266,15 @@ export function Sidebar() {
           ) : (
             <EmptyState title="No scan yet" message="Run a scan to populate the latest snapshot block." />
           )}
-        </Card>
+        </SectionFrame>
 
-        <Card title="Guardrails" subtitle="Frontend stays presentation-only.">
+        <SectionFrame eyebrow="Guardrails" title="Presentation-only UI" subtitle="The React migration keeps backend truth intact.">
           <ul className="space-y-2 text-sm text-ink-2">
             <li>No score calculations in React.</li>
             <li>No alert logic duplicated client-side.</li>
             <li>No portfolio decision inference in the UI.</li>
           </ul>
-        </Card>
+        </SectionFrame>
       </div>
     </aside>
   );

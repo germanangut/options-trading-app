@@ -212,6 +212,14 @@ Current auth routes:
 - `POST /auth/logout`
 - `GET /auth/me`
 
+## React compatibility notes
+
+Wave 2 adds backend-owned decision DTO shaping so React can stay presentation-only while simplifying some selectors.
+
+- Trade detail can prefer the dedicated backend trade-detail response instead of rebuilding execution-prep sections from the latest scan payload
+- Overview can consume a dedicated overview snapshot and comparison block instead of stitching together trust, comparison, and top-opportunity summaries client-side
+- Trade-specific history context is now available as a compact backend-owned section instead of being inferred only from generic history metadata
+
 ## Project structure
 
 - `app.py` — Streamlit UI and presentation logic

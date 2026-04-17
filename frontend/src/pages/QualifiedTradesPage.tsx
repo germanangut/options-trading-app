@@ -1,15 +1,21 @@
 import { Link } from "react-router-dom";
 
+import { ActionRow } from "../components/ui/ActionRow";
 import { Banner } from "../components/ui/Banner";
-import { Card } from "../components/ui/Card";
 import { Chip } from "../components/ui/Chip";
 import { EmptyState } from "../components/ui/EmptyState";
+import { MetricStrip } from "../components/ui/MetricStrip";
+import { QuickReviewPanel } from "../components/ui/QuickReviewPanel";
+import { SectionFrame } from "../components/ui/SectionFrame";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
-import { selectQualifiedTradesModel } from "../features/scans/selectors/scanSelectors";
-import { formatNumber, formatTradeLabel } from "../lib/formatters";
+import { selectQualifiedBoardModel } from "../features/scans/selectors/decisionExperienceSelectors";
 
 export function QualifiedTradesPage() {
   const latestScan = useLatestScan();
+
+  if (latestScan.isLoading) {
+    return <EmptyState title="Loading qualified trades" message="Waiting for the latest ranked board from the backend." />;
+  }
 
   if (latestScan.isError) {
     return (
@@ -28,63 +34,67 @@ export function QualifiedTradesPage() {
     );
   }
 
-  const qualifiedTrades = selectQualifiedTradesModel(latestScan.data);
+  const qualifiedTrades = selectQualifiedBoardModel(latestScan.data);
 
   return (
-    <Card
-      title="Qualified Trades"
-      subtitle={`${qualifiedTrades.total} trade(s) qualified in the latest scan.`}
-    >
-      {qualifiedTrades.rows.length === 0 ? (
+    <div className="grid gap-5">
+      <SectionFrame eyebrow="Qualified Trades" title="Ranked review board" subtitle="Preserves backend order and reconstructs fast comparison cues.">
+        <MetricStrip items={qualifiedTrades.summary} columns={4} />
+      </SectionFrame>
+
+      {qualifiedTrades.caveats.length > 0 ? (
+        <div className="grid gap-3">
+          {qualifiedTrades.caveats.map((caveat) => (
+            <Banner key={caveat} tone="warning" title="Scan caveat">
+              {caveat}
+            </Banner>
+          ))}
+        </div>
+      ) : null}
+
+      {qualifiedTrades.items.length === 0 ? (
         <EmptyState title="No qualified trades" message="The latest scan did not produce any qualified opportunities." />
       ) : (
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-200 text-sm">
-            <thead>
-              <tr className="text-left text-ink-3">
-                <th className="px-3 py-3 font-medium">Trade</th>
-                <th className="px-3 py-3 font-medium">Score</th>
-                <th className="px-3 py-3 font-medium">POP</th>
-                <th className="px-3 py-3 font-medium">ROR</th>
-                <th className="px-3 py-3 font-medium">Expiration</th>
-                <th className="px-3 py-3 font-medium">Status</th>
-                <th className="px-3 py-3 font-medium">Next</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {qualifiedTrades.rows.map(({ id, trade, score }, index) => (
-                <tr key={id} className="hover:bg-surface-0">
-                  <td className="px-3 py-3">
-                    <div className="font-medium text-ink-1">
-                      {index + 1}. {formatTradeLabel(trade)}
-                    </div>
-                    <div className="text-xs text-ink-3">
-                      {trade.short_strike ?? "-"} / {trade.long_strike ?? "-"} - DTE {trade.DTE ?? "-"}
-                    </div>
-                  </td>
-                  <td className="px-3 py-3 text-ink-2">
-                    {formatNumber(score)}
-                  </td>
-                  <td className="px-3 py-3 text-ink-2">{formatNumber(trade.POP)}</td>
-                  <td className="px-3 py-3 text-ink-2">{formatNumber(trade.ROR)}</td>
-                  <td className="px-3 py-3 text-ink-2">{trade.expiration_date ?? "-"}</td>
-                  <td className="px-3 py-3">
-                    <Chip tone="neutral">{trade.label ?? "Candidate"}</Chip>
-                  </td>
-                  <td className="px-3 py-3">
-                    <Link
-                      to={`/qualified/${id}`}
-                      className="inline-flex rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-ink-2 transition hover:bg-surface-2"
-                    >
-                      View
+        <div className="grid gap-4">
+          {qualifiedTrades.items.map((item) => (
+            <SectionFrame
+              key={item.id}
+              eyebrow={`Rank #${item.rank}`}
+              title={item.title}
+              subtitle={item.subtitle}
+              actions={
+                <div className="flex flex-wrap gap-2">
+                  <Chip tone={item.directionTone}>{item.direction}</Chip>
+                  <Chip tone={item.labelTone}>{item.label}</Chip>
+                </div>
+              }
+              className="relative overflow-hidden"
+            >
+              <div className="absolute inset-y-0 left-0 w-1.5 bg-accent" />
+              <div className="space-y-4 pl-2">
+                <MetricStrip items={item.metrics} columns={3} compact />
+                <QuickReviewPanel title="Quick review" summary={item.quickReview.summary}>
+                  <div className="grid gap-2 text-sm text-ink-2">
+                    {item.quickReview.structure.map((line) => (
+                      <p key={line}>{line}</p>
+                    ))}
+                  </div>
+                </QuickReviewPanel>
+                <ActionRow>
+                  {item.href ? (
+                    <Link to={item.href} className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white">
+                      Open detail
                     </Link>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  ) : null}
+                  <Link to="/alerts" className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-ink-2">
+                    Compare with alerts
+                  </Link>
+                </ActionRow>
+              </div>
+            </SectionFrame>
+          ))}
         </div>
       )}
-    </Card>
+    </div>
   );
 }

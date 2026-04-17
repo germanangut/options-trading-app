@@ -12,6 +12,20 @@ export function formatNumber(value: number | string | null | undefined) {
   return value;
 }
 
+
+export function formatCurrency(value: number | string | null | undefined) {
+  if (value === null || value === undefined || value === "") {
+    return "-";
+  }
+
+  const numeric = Number(value);
+  if (Number.isNaN(numeric)) {
+    return String(value);
+  }
+
+  return `$${numeric.toFixed(2)}`;
+}
+
 export function formatDuration(value: number | null | undefined) {
   if (value === null || value === undefined) {
     return "-";
@@ -23,6 +37,11 @@ export function formatDuration(value: number | null | undefined) {
 export function formatTradeLabel(trade: Pick<QualifiedTradeRow, "ticker" | "strategy_label" | "strategy_type">) {
   const strategy = trade.strategy_label ?? trade.strategy_type ?? "Trade";
   return `${trade.ticker} - ${strategy}`;
+}
+
+
+export function formatValueLabel(value: string) {
+  return value.replace(/_/g, " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 export function formatPageTitle(pathname: string) {

@@ -4,6 +4,8 @@ export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0
 
 export const QUERY_KEYS = {
   latestScan: ["latest-scan"] as const,
+  scanById: ["scan-by-id"] as const,
+  tradeDetail: ["trade-detail"] as const,
 };
 
 export const DEFAULT_SCAN_REQUEST: ScanRequest = {

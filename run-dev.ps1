@@ -47,8 +47,9 @@ $npmPath = (Resolve-Path $npmPath).Path
 $frontendNodeModules = Join-Path $frontendDir "node_modules"
 $shouldInstallFrontendDeps = $InstallFrontendDeps -or -not (Test-Path $frontendNodeModules)
 $backendUrl = "http://127.0.0.1:8000/docs"
-$frontendUrl = "http://127.0.0.1:5173"
-$streamlitUrl = "http://127.0.0.1:8501"
+$frontendUrl = "http://localhost:5173"
+$frontendLoginUrl = "$frontendUrl/login"
+$streamlitUrl = "http://localhost:8501"
 
 function Start-DevWindow {
     param(
@@ -161,8 +162,8 @@ if ($IncludeStreamlit) {
 
 Write-Host ""
 Write-Host "Launched development windows:" -ForegroundColor Cyan
-Write-Host "- FastAPI backend target: http://127.0.0.1:8000" -ForegroundColor Cyan
-Write-Host "- React frontend target:  http://127.0.0.1:5173" -ForegroundColor Cyan
+Write-Host "- FastAPI backend target: http://localhost:8000" -ForegroundColor Cyan
+Write-Host "- React frontend target:  http://localhost:5173" -ForegroundColor Cyan
 
 if ($IncludeStreamlit) {
     Write-Host "- Streamlit target:       http://127.0.0.1:8501" -ForegroundColor Cyan
@@ -172,9 +173,14 @@ Write-Host ""
 Write-Host "Verifying service startup..." -ForegroundColor Cyan
 Wait-ForUrlReady -Name "FastAPI backend" -Url $backendUrl | Out-Null
 if ($shouldInstallFrontendDeps) {
-    Wait-ForUrlReady -Name "React frontend" -Url $frontendUrl -Attempts 120 -DelaySeconds 1 | Out-Null
+    $frontendReady = Wait-ForUrlReady -Name "React frontend" -Url $frontendUrl -Attempts 120 -DelaySeconds 1
 } else {
-    Wait-ForUrlReady -Name "React frontend" -Url $frontendUrl -Attempts 45 -DelaySeconds 1 | Out-Null
+    $frontendReady = Wait-ForUrlReady -Name "React frontend" -Url $frontendUrl -Attempts 45 -DelaySeconds 1
+}
+
+if ($frontendReady) {
+    Start-Process $frontendLoginUrl | Out-Null
+    Write-Host "- Opened login page: $frontendLoginUrl" -ForegroundColor Green
 }
 
 if ($IncludeStreamlit) {

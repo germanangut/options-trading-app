@@ -33,6 +33,7 @@ export type AuthSession = {
 };
 
 export type ScanMetadataBasics = {
+  scan_id: string;
   generated_at: string;
   profile: string;
   ticker_group: string;
@@ -55,6 +56,7 @@ export type ScanMetadataBasics = {
 };
 
 export type TradeIdentityFields = {
+  trade_id?: string;
   ticker: string;
   strategy_type: string;
   strategy_key?: string;
@@ -239,4 +241,28 @@ export type ScanResult = {
   history_context: HistoryContext;
   daily_summary: DailySummary;
   diagnostics: ScanDiagnostics;
+};
+
+export type TradeDetailData = TradeIdentityFields & {
+  underlying_price?: number;
+  net_credit?: number;
+  spread_width?: number;
+  max_risk?: number;
+  consistency_bonus?: number;
+  score_breakdown?: Record<string, unknown> | null;
+  penalties?: Record<string, unknown> | null;
+};
+
+export type TradeDetailResponse = {
+  scan_id: string;
+  trade: TradeDetailData;
+  scan_metadata: {
+    profile?: string;
+    ticker_group?: string;
+    generated_at?: string;
+  };
+  diagnostics: {
+    provider_errors?: Array<Record<string, unknown>>;
+    missing_tickers?: string[];
+  };
 };

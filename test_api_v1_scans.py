@@ -93,8 +93,14 @@ def test_v1_scan_endpoints_expose_stable_ids_and_screen_shapes(monkeypatch):
             trade_detail = trade_detail_response.json()
             assert trade_detail["scan_id"] == scan_id
             assert trade_detail["trade"]["trade_id"] == trade_row["trade_id"]
+            assert "breakeven" in trade_detail["trade"]
+            assert "max_profit" in trade_detail["trade"]
+            assert "max_loss" in trade_detail["trade"]
+            assert "history_context" in trade_detail
+            assert "portfolio_fit" in trade_detail
 
         alerts_response = client.get(f"/api/v1/scans/{scan_id}/alerts", headers=headers)
+        overview_response = client.get(f"/api/v1/scans/{scan_id}/overview", headers=headers)
         history_response = client.get(f"/api/v1/scans/{scan_id}/history", headers=headers)
         portfolio_response = client.get(f"/api/v1/scans/{scan_id}/portfolio", headers=headers)
         daily_summary_response = client.get(
@@ -103,13 +109,22 @@ def test_v1_scan_endpoints_expose_stable_ids_and_screen_shapes(monkeypatch):
         )
 
         assert alerts_response.status_code == 200
+        assert overview_response.status_code == 200
         assert history_response.status_code == 200
         assert portfolio_response.status_code == 200
         assert daily_summary_response.status_code == 200
 
+        overview_body = overview_response.json()
         history_body = history_response.json()
         portfolio_body = portfolio_response.json()
         daily_body = daily_summary_response.json()
+
+        assert overview_body["scan_id"] == scan_id
+        assert "headline" in overview_body
+        assert "top_opportunity" in overview_body
+        assert "trust_snapshot" in overview_body
+        assert "comparison" in overview_body
+        assert overview_body["comparison"]["has_previous_scan"] is False
 
         assert history_body["scan_id"] == scan_id
         assert "summary_cards" in history_body

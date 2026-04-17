@@ -63,7 +63,7 @@ const router = createBrowserRouter([
     children: [
       { index: true, element: <OverviewPage /> },
       { path: "qualified", element: <QualifiedTradesPage /> },
-      { path: "qualified/:tradeId", element: <QualifiedTradeDetailPage /> },
+      { path: "scans/:scanId/trades/:tradeId", element: <QualifiedTradeDetailPage /> },
       { path: "alerts", element: <AlertsPage /> },
       { path: "portfolio", element: <PortfolioPage /> },
       { path: "history", element: <HistoryPage /> },

@@ -10,6 +10,7 @@ from backend.api.schemas.scans import (
     AlertItemResponse,
     DailySummaryResponse,
     HistoryScreenResponse,
+    OverviewSnapshotResponse,
     PortfolioScreenResponse,
     ScanRequestBody,
     ScanResultResponse,
@@ -26,10 +27,12 @@ from backend.services.scan_service import (
 from backend.services.screen_builders import (
     build_daily_summary_payload,
     build_history_screen_payload,
+    build_overview_snapshot_response,
     build_portfolio_screen_payload,
-    build_trade_detail_payload,
+    build_trade_detail_response,
     build_trade_summary_row,
 )
+from backend.services.scan_service import list_scans
 
 
 router = APIRouter(tags=["scans"])
@@ -59,6 +62,20 @@ def _load_required_scan(scan_id: str, user_id: str) -> dict[str, Any]:
         raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' was not found.")
 
     return scan_result
+
+
+def _load_previous_scan(scan_id: str, user_id: str) -> dict[str, Any] | None:
+    scans = list_scans(limit=None, user_id=user_id)
+    previous_scan = None
+
+    for index, candidate in enumerate(scans):
+        candidate_scan_id = ((candidate.get("scan_metadata") or {}).get("scan_id"))
+        if candidate_scan_id == scan_id:
+            if index + 1 < len(scans):
+                previous_scan = scans[index + 1]
+            break
+
+    return previous_scan
 
 
 def _load_required_trade(scan_result: dict[str, Any], trade_id: str) -> dict[str, Any]:
@@ -103,6 +120,19 @@ def get_scan_by_id_route(
     current_user: dict[str, str | None] = Depends(require_current_user),
 ) -> dict[str, Any]:
     return _load_required_scan(scan_id, current_user["user_id"])
+
+
+@v1_router.get("/{scan_id}/overview", response_model=OverviewSnapshotResponse)
+def get_overview_snapshot(
+    scan_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, Any]:
+    scan_result = _load_required_scan(scan_id, current_user["user_id"])
+    previous_scan = _load_previous_scan(scan_id, current_user["user_id"])
+    return build_overview_snapshot_response(
+        scan_result,
+        previous_scan_result=previous_scan,
+    )
 
 
 @v1_router.get("/{scan_id}/qualified-trades", response_model=list[TradeSummaryRow])
@@ -158,7 +188,11 @@ def get_trade_detail(
 ) -> dict[str, Any]:
     scan_result = _load_required_scan(scan_id, current_user["user_id"])
     trade = _load_required_trade(scan_result, trade_id)
-    return build_trade_detail_payload(trade, scan_result)
+    return build_trade_detail_response(
+        trade,
+        scan_result,
+        user_id=current_user["user_id"],
+    )
 
 
 router.include_router(legacy_router)
