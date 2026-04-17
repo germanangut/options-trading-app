@@ -3,15 +3,18 @@ from __future__ import annotations
 from copy import deepcopy
 from datetime import UTC, datetime
 import json
+import logging
 from pathlib import Path
 import sqlite3
 from typing import Any
 
+from backend.observability.logging import get_logger, log_event
 from backend.repositories.scan_repository import ScanRepository
 
 
 SCAN_SCHEMA_VERSION = 1
 STORAGE_BACKEND_SQLITE = "sqlite"
+logger = get_logger(__name__)
 
 
 def _utc_now_iso() -> str:
@@ -132,9 +135,23 @@ class SQLiteScanRepository(ScanRepository):
         try:
             payload = json.loads(row["scan_result_json"])
         except (TypeError, json.JSONDecodeError):
+            log_event(
+                logger,
+                "persistence_read",
+                level=logging.WARNING,
+                operation="deserialize_scan",
+                error_type="malformed_persisted_payload",
+            )
             return None
 
         if not isinstance(payload, dict):
+            log_event(
+                logger,
+                "persistence_read",
+                level=logging.WARNING,
+                operation="deserialize_scan",
+                error_type="unexpected_payload_type",
+            )
             return None
 
         return self._normalize_scan_result(
@@ -167,43 +184,64 @@ class SQLiteScanRepository(ScanRepository):
         )
         payload_json = json.dumps(normalized_scan_result)
 
-        with self._connect() as connection:
-            connection.execute(
-                """
-                INSERT INTO scans (
-                    scan_id,
-                    generated_at,
-                    stored_at,
-                    schema_version,
-                    storage_backend,
-                    owner_user_id,
-                    profile,
-                    ticker_group,
-                    scan_result_json
+        try:
+            with self._connect() as connection:
+                connection.execute(
+                    """
+                    INSERT INTO scans (
+                        scan_id,
+                        generated_at,
+                        stored_at,
+                        schema_version,
+                        storage_backend,
+                        owner_user_id,
+                        profile,
+                        ticker_group,
+                        scan_result_json
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(scan_id) DO UPDATE SET
+                        generated_at = excluded.generated_at,
+                        stored_at = excluded.stored_at,
+                        schema_version = excluded.schema_version,
+                        storage_backend = excluded.storage_backend,
+                        owner_user_id = excluded.owner_user_id,
+                        profile = excluded.profile,
+                        ticker_group = excluded.ticker_group,
+                        scan_result_json = excluded.scan_result_json
+                    """,
+                    (
+                        scan_id,
+                        generated_at,
+                        stored_at,
+                        SCAN_SCHEMA_VERSION,
+                        STORAGE_BACKEND_SQLITE,
+                        owner_user_id,
+                        scan_metadata.get("profile"),
+                        scan_metadata.get("ticker_group"),
+                        payload_json,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(scan_id) DO UPDATE SET
-                    generated_at = excluded.generated_at,
-                    stored_at = excluded.stored_at,
-                    schema_version = excluded.schema_version,
-                    storage_backend = excluded.storage_backend,
-                    owner_user_id = excluded.owner_user_id,
-                    profile = excluded.profile,
-                    ticker_group = excluded.ticker_group,
-                    scan_result_json = excluded.scan_result_json
-                """,
-                (
-                    scan_id,
-                    generated_at,
-                    stored_at,
-                    SCAN_SCHEMA_VERSION,
-                    STORAGE_BACKEND_SQLITE,
-                    owner_user_id,
-                    scan_metadata.get("profile"),
-                    scan_metadata.get("ticker_group"),
-                    payload_json,
-                ),
+        except sqlite3.Error as exc:
+            log_event(
+                logger,
+                "persistence_write",
+                level=logging.ERROR,
+                operation="save_scan",
+                scan_id=scan_id,
+                user_id=owner_user_id,
+                error_type=type(exc).__name__,
             )
+            raise
+
+        log_event(
+            logger,
+            "persistence_write",
+            operation="save_scan",
+            scan_id=scan_id,
+            user_id=owner_user_id,
+            storage_backend=STORAGE_BACKEND_SQLITE,
+        )
 
         return normalized_scan_result
 
@@ -226,10 +264,31 @@ class SQLiteScanRepository(ScanRepository):
             query = f"{query} AND owner_user_id = ?"
             parameters = (scan_id, user_id)
 
-        with self._connect() as connection:
-            row = connection.execute(query, parameters).fetchone()
+        try:
+            with self._connect() as connection:
+                row = connection.execute(query, parameters).fetchone()
+        except sqlite3.Error as exc:
+            log_event(
+                logger,
+                "persistence_read",
+                level=logging.ERROR,
+                operation="get_scan",
+                scan_id=scan_id,
+                user_id=user_id,
+                error_type=type(exc).__name__,
+            )
+            raise
 
-        return self._deserialize_scan(row)
+        scan = self._deserialize_scan(row)
+        log_event(
+            logger,
+            "persistence_read",
+            operation="get_scan",
+            scan_id=scan_id,
+            user_id=user_id,
+            found=scan is not None,
+        )
+        return scan
 
     def get_latest_scan(self, *, user_id: str | None = None) -> dict[str, Any] | None:
         query = """
@@ -244,14 +303,40 @@ class SQLiteScanRepository(ScanRepository):
             f"{query} ORDER BY COALESCE(generated_at, stored_at) DESC, stored_at DESC, scan_id DESC"
         )
 
-        with self._connect() as connection:
-            rows = connection.execute(query, parameters).fetchall()
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(query, parameters).fetchall()
+        except sqlite3.Error as exc:
+            log_event(
+                logger,
+                "persistence_read",
+                level=logging.ERROR,
+                operation="get_latest_scan",
+                user_id=user_id,
+                error_type=type(exc).__name__,
+            )
+            raise
 
         for row in rows:
             scan = self._deserialize_scan(row)
             if scan is not None:
+                log_event(
+                    logger,
+                    "persistence_read",
+                    operation="get_latest_scan",
+                    user_id=user_id,
+                    found=True,
+                    scan_id=((scan.get("scan_metadata") or {}).get("scan_id")),
+                )
                 return scan
 
+        log_event(
+            logger,
+            "persistence_read",
+            operation="get_latest_scan",
+            user_id=user_id,
+            found=False,
+        )
         return None
 
     def list_scans(
@@ -275,14 +360,34 @@ class SQLiteScanRepository(ScanRepository):
             query = f"{query} LIMIT ?"
             parameters = (*parameters, limit)
 
-        with self._connect() as connection:
-            rows = connection.execute(query, parameters).fetchall()
+        try:
+            with self._connect() as connection:
+                rows = connection.execute(query, parameters).fetchall()
+        except sqlite3.Error as exc:
+            log_event(
+                logger,
+                "persistence_read",
+                level=logging.ERROR,
+                operation="list_scans",
+                user_id=user_id,
+                error_type=type(exc).__name__,
+            )
+            raise
 
         scans = []
         for row in rows:
             scan = self._deserialize_scan(row)
             if scan is not None:
                 scans.append(scan)
+
+        log_event(
+            logger,
+            "persistence_read",
+            operation="list_scans",
+            user_id=user_id,
+            count=len(scans),
+            limit=limit,
+        )
 
         return scans
 
@@ -298,13 +403,42 @@ class SQLiteScanRepository(ScanRepository):
 
         scan_result = self.get_scan(scan_id, user_id=user_id)
         if not scan_result:
+            log_event(
+                logger,
+                "persistence_read",
+                level=logging.WARNING,
+                operation="get_trade",
+                scan_id=scan_id,
+                user_id=user_id,
+                trade_id=trade_id,
+                found=False,
+            )
             return None
 
         for collection_name in ("qualified_trades", "alerts", "near_miss_trades"):
             for trade in scan_result.get(collection_name, []) or []:
                 if trade.get("trade_id") == trade_id:
+                    log_event(
+                        logger,
+                        "persistence_read",
+                        operation="get_trade",
+                        scan_id=scan_id,
+                        user_id=user_id,
+                        trade_id=trade_id,
+                        found=True,
+                    )
                     return trade
 
+        log_event(
+            logger,
+            "persistence_read",
+            level=logging.WARNING,
+            operation="get_trade",
+            scan_id=scan_id,
+            user_id=user_id,
+            trade_id=trade_id,
+            found=False,
+        )
         return None
 
     def clear(self, *, user_id: str | None = None) -> None:

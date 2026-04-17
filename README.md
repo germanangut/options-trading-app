@@ -212,6 +212,81 @@ Current auth routes:
 - `POST /auth/logout`
 - `GET /auth/me`
 
+## Observability and security hardening
+
+PU-12 adds lightweight operational hardening for the FastAPI backend without changing trading logic.
+
+### Logging conventions
+
+- Backend logs are structured JSON lines emitted through a centralized logger helper
+- Request middleware attaches a per-request `request_id` and returns it as the `X-Request-ID` response header
+- Request context is propagated into service, repository, auth, and provider logs through context-local binding
+- Sensitive fields such as passwords, tokens, secrets, and API credentials are masked before logging
+
+### Logged event categories
+
+- `request_started`
+- `request_completed`
+- `request_failed`
+- `scan_started`
+- `scan_completed`
+- `scan_failed`
+- `persistence_read`
+- `persistence_write`
+- `auth_login_success`
+- `auth_login_failure`
+- `auth_logout`
+- `provider_request_started`
+- `provider_request_completed`
+- `provider_request_failed`
+- security-adjacent events such as `token_validation_failed` and `unauthorized_access_attempt`
+
+### Error handling
+
+- API errors use a standardized envelope: `error.code`, `error.message`, `error.request_id`
+- Validation, auth, not-found, provider, and internal failures are handled centrally
+- Stack traces remain server-side only and are not exposed to API clients
+
+### Health and readiness
+
+- `GET /health` returns a simple liveness status
+- `GET /ready` checks persistence access, auth store access, config resolution, and provider mode readiness
+- Provider readiness is lightweight and does not perform an external API probe
+
+### Deployment and runtime notes
+
+- Logs are emitted as newline-delimited JSON on standard output and are intended to be consumed directly by Docker, container platforms, or external collectors
+- In containerized deployments, prefer platform log collection from stdout/stderr rather than writing application log files inside the container
+- `X-Request-ID` is accepted from upstream when present and echoed back to clients; only trust upstream-supplied request IDs when your reverse proxy or load balancer is under your control
+- If the app sits behind a public reverse proxy, configure that proxy to generate or sanitize request IDs instead of blindly forwarding arbitrary client-provided correlation headers
+- Keep `GET /ready` lightweight and focused on internal dependency readiness; it should not require live provider calls or external market-data reachability
+
+### Environment variables
+
+Existing runtime variables still apply, plus the following observability-oriented settings:
+
+- `APP_ENV`: environment label such as `development`, `test`, or `production`
+- `LOG_LEVEL`: backend log level, for example `INFO`, `DEBUG`, or `WARNING`
+- `LOG_FORMAT`: reserved seam for log formatting selection, currently JSON-oriented
+- `SENTRY_DSN`: optional external error tracking DSN
+- `ALPACA_API_KEY`
+- `ALPACA_API_SECRET`
+- `ALPACA_DATA_BASE_URL`
+- `ALPACA_TRADING_BASE_URL`
+- `HISTORY_DIR`
+- `CACHE_DIR`
+- `SCAN_DATABASE_PATH`
+- `AUTH_SESSION_TTL_HOURS`
+- `CORS_ALLOW_ORIGINS`
+
+### Deferred to PU-13
+
+- external log aggregation and retention policy
+- real cloud secret manager integration
+- stronger deployment-time security headers and reverse-proxy hardening
+- metrics and tracing export to dedicated observability backends
+- active provider readiness probing with rate-limit-aware behavior
+
 ## React compatibility notes
 
 Wave 2 adds backend-owned decision DTO shaping so React can stay presentation-only while simplifying some selectors.

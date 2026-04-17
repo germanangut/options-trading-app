@@ -1,5 +1,6 @@
 import os
 from datetime import date, datetime, timedelta
+import logging
 import sys
 import time
 import json
@@ -9,10 +10,12 @@ from pathlib import Path
 import requests
 from dotenv import load_dotenv
 
+from backend.observability.logging import get_logger, log_event
 from mock_data import MOCK_OPTIONS_DATA
 from settings import get_settings
 
 DEBUG_MODE = "--debug" in sys.argv
+logger = get_logger(__name__)
 
 
 
@@ -102,10 +105,26 @@ def set_cached_market_data(cache_key, value):
     
 
 def get_market_data(tickers, dte_min=30, dte_max=45):
+    provider = "alpaca" if has_alpaca_credentials() else "alpaca-mock-fallback"
+    started_at = time.perf_counter()
+    log_event(
+        logger,
+        "provider_request_started",
+        provider=provider,
+        ticker_count=len(tickers or []),
+    )
     cache_key = build_market_data_cache_key(tickers, dte_min, dte_max)
     cached_value = get_cached_market_data(cache_key)
 
     if cached_value is not None:
+        log_event(
+            logger,
+            "provider_request_completed",
+            provider=provider,
+            duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+            cache_hit=True,
+            missing_ticker_count=len(cached_value.get("missing_tickers", [])),
+        )
         return cached_value
 
     if has_alpaca_credentials():
@@ -114,6 +133,15 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
         result = get_mock_market_data(tickers)
 
     set_cached_market_data(cache_key, result)
+    log_event(
+        logger,
+        "provider_request_completed",
+        provider=result.get("provider", provider),
+        duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+        cache_hit=False,
+        missing_ticker_count=len(result.get("missing_tickers", [])),
+        provider_error_count=len(result.get("provider_errors", [])),
+    )
     return result
 
 
@@ -129,6 +157,14 @@ def alpaca_headers():
 
 
 def get_mock_market_data(tickers):
+    started_at = time.perf_counter()
+    log_event(
+        logger,
+        "provider_request_started",
+        provider="alpaca-mock-fallback",
+        ticker_count=len(tickers or []),
+        fallback_mode=True,
+    )
     market_data = {}
     missing_tickers = []
 
@@ -138,12 +174,21 @@ def get_mock_market_data(tickers):
         else:
             missing_tickers.append(ticker)
 
-    return {
+    result = {
         "market_data": market_data,
         "missing_tickers": missing_tickers,
         "provider": "alpaca-mock-fallback",
         "provider_errors": [],
     }
+    log_event(
+        logger,
+        "provider_request_completed",
+        provider="alpaca-mock-fallback",
+        duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
+        missing_ticker_count=len(missing_tickers),
+        fallback_mode=True,
+    )
+    return result
 
 
 def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
@@ -152,6 +197,13 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
     provider_errors = []
 
     for ticker in tickers:
+        ticker_started_at = time.perf_counter()
+        log_event(
+            logger,
+            "provider_request_started",
+            provider="alpaca",
+            ticker=ticker,
+        )
         try:
             discovered = discover_option_contracts_for_window(
                 ticker=ticker,
@@ -161,6 +213,15 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
 
             if not discovered["contracts"]:
                 missing_tickers.append(ticker)
+                log_event(
+                    logger,
+                    "provider_request_completed",
+                    provider="alpaca",
+                    ticker=ticker,
+                    duration_ms=round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                    missing_data=True,
+                    contract_count=0,
+                )
                 continue
 
             option_symbols = [contract["symbol"] for contract in discovered["contracts"]]
@@ -178,6 +239,15 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
 
             if normalized is None:
                 missing_tickers.append(ticker)
+                log_event(
+                    logger,
+                    "provider_request_completed",
+                    provider="alpaca",
+                    ticker=ticker,
+                    duration_ms=round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                    missing_data=True,
+                    contract_count=0,
+                )
                 continue
 
             market_data[ticker] = normalized
@@ -185,12 +255,33 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             if not normalized["contracts"]:
                 missing_tickers.append(ticker)
 
+            log_event(
+                logger,
+                "provider_request_completed",
+                provider="alpaca",
+                ticker=ticker,
+                duration_ms=round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                missing_data=not bool(normalized["contracts"]),
+                contract_count=len(normalized["contracts"]),
+                partial_data=normalized["provider_diagnostics"].get("matching_symbol_count", 0)
+                != normalized["provider_diagnostics"].get("discovered_symbol_count", 0),
+            )
+
         except Exception as exc:
             provider_errors.append(
                 {
                     "ticker": ticker,
                     "error": str(exc),
                 }
+            )
+            log_event(
+                logger,
+                "provider_request_failed",
+                level=logging.ERROR,
+                provider="alpaca",
+                ticker=ticker,
+                duration_ms=round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                error_type=type(exc).__name__,
             )
 
     return {

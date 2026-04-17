@@ -3,18 +3,22 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 import hashlib
 import hmac
+import logging
 import secrets
 from uuid import uuid4
 
 from fastapi import HTTPException, status
 
 from backend.contracts.identity_models import UserRecord
+from backend.observability.context import bind_context
+from backend.observability.logging import get_logger, log_event
 from backend.repositories.factory import get_auth_repository
 from settings import get_settings
 
 
 LOCAL_AUTH_PROVIDER = "local"
 MIN_PASSWORD_LENGTH = 8
+logger = get_logger(__name__)
 
 
 def _utc_now_iso() -> str:
@@ -115,6 +119,13 @@ def register_user(email: str, password: str) -> dict[str, object]:
     )
     repository.update_last_login_at(user.user_id, now)
     refreshed_user = repository.get_user_by_id(user.user_id)
+    log_event(
+        logger,
+        "auth_register_success",
+        user_id=refreshed_user.user_id,
+        email=normalized_email,
+        auth_provider=LOCAL_AUTH_PROVIDER,
+    )
     return _issue_session(refreshed_user)
 
 
@@ -124,6 +135,13 @@ def login_user(email: str, password: str) -> dict[str, object]:
     user = repository.get_user_by_email(normalized_email)
 
     if user is None:
+        log_event(
+            logger,
+            "auth_login_failure",
+            level=logging.WARNING,
+            email=normalized_email,
+            error_type="user_not_found",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
@@ -131,6 +149,14 @@ def login_user(email: str, password: str) -> dict[str, object]:
 
     expected_hash = _hash_password(password, user.password_salt)
     if not hmac.compare_digest(expected_hash, user.password_hash):
+        log_event(
+            logger,
+            "auth_login_failure",
+            level=logging.WARNING,
+            user_id=user.user_id,
+            email=normalized_email,
+            error_type="invalid_password",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid email or password.",
@@ -139,6 +165,14 @@ def login_user(email: str, password: str) -> dict[str, object]:
     now = _utc_now_iso()
     repository.update_last_login_at(user.user_id, now)
     refreshed_user = repository.get_user_by_id(user.user_id)
+    bind_context(user_id=refreshed_user.user_id)
+    log_event(
+        logger,
+        "auth_login_success",
+        user_id=refreshed_user.user_id,
+        email=refreshed_user.email,
+        auth_provider=refreshed_user.auth_provider,
+    )
     return _issue_session(refreshed_user)
 
 
@@ -146,11 +180,25 @@ def logout_user(token: str) -> None:
     if not token:
         return
 
-    get_auth_repository().revoke_session(_hash_token(token), _utc_now_iso())
+    repository = get_auth_repository()
+    token_hash = _hash_token(token)
+    session = repository.get_session_by_token_hash(token_hash)
+    repository.revoke_session(token_hash, _utc_now_iso())
+    log_event(
+        logger,
+        "auth_logout",
+        user_id=session.user_id if session is not None else None,
+    )
 
 
 def get_current_user_from_token(token: str) -> dict[str, str | None]:
     if not token:
+        log_event(
+            logger,
+            "token_validation_failed",
+            level=logging.WARNING,
+            error_type="missing_token",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Authentication required.",
@@ -160,6 +208,12 @@ def get_current_user_from_token(token: str) -> dict[str, str | None]:
     repository = get_auth_repository()
     session = repository.get_session_by_token_hash(_hash_token(token))
     if session is None or session.revoked_at:
+        log_event(
+            logger,
+            "token_validation_failed",
+            level=logging.WARNING,
+            error_type="invalid_or_revoked_session",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session is invalid.",
@@ -168,6 +222,13 @@ def get_current_user_from_token(token: str) -> dict[str, str | None]:
 
     if session.expires_at <= _utc_now_iso():
         repository.revoke_session(session.token_hash, _utc_now_iso())
+        log_event(
+            logger,
+            "token_validation_failed",
+            level=logging.WARNING,
+            user_id=session.user_id,
+            error_type="session_expired",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Session has expired.",
@@ -176,10 +237,18 @@ def get_current_user_from_token(token: str) -> dict[str, str | None]:
 
     user = repository.get_user_by_id(session.user_id)
     if user is None:
+        log_event(
+            logger,
+            "token_validation_failed",
+            level=logging.WARNING,
+            user_id=session.user_id,
+            error_type="user_unavailable",
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="User account is unavailable.",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
+    bind_context(user_id=user.user_id)
     return _serialize_user(user)

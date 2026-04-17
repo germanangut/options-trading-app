@@ -11,6 +11,7 @@ from profiles import PROFILES
 
 
 DEFAULT_SETTINGS = {
+    "app_env": "development",
     "profile": "balanced",
     "ticker_group": "tech",
     "pop_weight": 0.6,
@@ -23,6 +24,9 @@ DEFAULT_SETTINGS = {
     "cache_dir": ".cache",
     "scan_database_path": None,
     "auth_session_ttl_hours": 168,
+    "log_level": "INFO",
+    "log_format": "json",
+    "sentry_dsn": None,
     "strategy_config": {},
     "alpaca_api_key": None,
     "alpaca_api_secret": None,
@@ -31,6 +35,7 @@ DEFAULT_SETTINGS = {
 }
 
 ENV_TO_SETTINGS_MAP = {
+    "APP_ENV": "app_env",
     "ALPACA_API_KEY": "alpaca_api_key",
     "ALPACA_API_SECRET": "alpaca_api_secret",
     "ALPACA_DATA_BASE_URL": "alpaca_data_base_url",
@@ -39,6 +44,9 @@ ENV_TO_SETTINGS_MAP = {
     "CACHE_DIR": "cache_dir",
     "SCAN_DATABASE_PATH": "scan_database_path",
     "AUTH_SESSION_TTL_HOURS": "auth_session_ttl_hours",
+    "LOG_LEVEL": "log_level",
+    "LOG_FORMAT": "log_format",
+    "SENTRY_DSN": "sentry_dsn",
 }
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -101,3 +109,31 @@ def get_settings(cli_overrides=None):
     resolved.update(overrides)
     resolved.update(_load_env_overrides())
     return resolved
+
+
+def mask_sensitive_value(value):
+    if value in (None, ""):
+        return None
+
+    text = str(value)
+    if len(text) <= 4:
+        return "***"
+    return f"{text[:2]}***{text[-2:]}"
+
+
+def get_safe_settings_summary() -> dict[str, object]:
+    settings = get_settings()
+    return {
+        "app_env": settings.get("app_env"),
+        "log_level": settings.get("log_level"),
+        "history_dir": settings.get("history_dir"),
+        "cache_dir": settings.get("cache_dir"),
+        "scan_database_path": settings.get("scan_database_path"),
+        "auth_session_ttl_hours": settings.get("auth_session_ttl_hours"),
+        "alpaca_credentials_configured": bool(
+            settings.get("alpaca_api_key") and settings.get("alpaca_api_secret")
+        ),
+        "alpaca_data_base_url": settings.get("alpaca_data_base_url"),
+        "alpaca_trading_base_url": settings.get("alpaca_trading_base_url"),
+        "sentry_dsn": mask_sensitive_value(settings.get("sentry_dsn")),
+    }

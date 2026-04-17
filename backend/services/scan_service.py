@@ -6,9 +6,11 @@ call with `run_scan(ScanRequest(...))` and continue rendering the returned
 payload after mapping from the canonical top-level sections it needs.
 """
 
+import logging
 from typing import Any
 
 from backend.contracts.scan_result import ScanRequest, build_scan_result
+from backend.observability.logging import get_logger, log_event
 from backend.services.scan_store import (
     list_scan_results,
     load_latest_scan_result,
@@ -19,6 +21,9 @@ from engine import run_scan_engine
 from history import get_historical_intelligence_summary
 
 
+logger = get_logger(__name__)
+
+
 def run_scan(
     request: ScanRequest,
     *,
@@ -26,28 +31,55 @@ def run_scan(
 ) -> dict:
     """Run the existing scan engine and return the canonical ScanResult."""
     selected_strategy_keys = request.selected_strategy_keys or None
-
-    raw_output = run_scan_engine(
-        profile_name=request.profile,
-        group_name=request.ticker_group,
-        dte_min=request.dte_min,
-        dte_max=request.dte_max,
-        min_score=request.min_score,
-        min_consistency=request.min_consistency,
-        export_csv=False,
-        selected_strategy_keys=selected_strategy_keys,
-        persist_history=False,
+    log_event(
+        logger,
+        "scan_started",
+        user_id=user_id,
+        profile=request.profile,
+        ticker_group=request.ticker_group,
     )
 
-    scan_result = build_scan_result(raw_output, request)
-    save_scan_result(scan_result, user_id=user_id)
-    scan_result["history_context"] = {
-        "historical_intelligence_summary": get_historical_intelligence_summary(
-            limit=5,
+    try:
+        raw_output = run_scan_engine(
+            profile_name=request.profile,
+            group_name=request.ticker_group,
+            dte_min=request.dte_min,
+            dte_max=request.dte_max,
+            min_score=request.min_score,
+            min_consistency=request.min_consistency,
+            export_csv=False,
+            selected_strategy_keys=selected_strategy_keys,
+            persist_history=False,
+        )
+
+        scan_result = build_scan_result(raw_output, request)
+        save_scan_result(scan_result, user_id=user_id)
+        scan_result["history_context"] = {
+            "historical_intelligence_summary": get_historical_intelligence_summary(
+                limit=5,
+                user_id=user_id,
+            ),
+        }
+        persisted = save_scan_result(scan_result, user_id=user_id)
+        log_event(
+            logger,
+            "scan_completed",
             user_id=user_id,
-        ),
-    }
-    return save_scan_result(scan_result, user_id=user_id)
+            scan_id=((persisted.get("scan_metadata") or {}).get("scan_id")),
+            qualified_count=((persisted.get("summary") or {}).get("qualified_count")),
+            alerts_count=len(persisted.get("alerts", []) or []),
+            provider=((persisted.get("diagnostics") or {}).get("provider") or (persisted.get("scan_metadata") or {}).get("provider")),
+        )
+        return persisted
+    except Exception as exc:
+        log_event(
+            logger,
+            "scan_failed",
+            level=logging.ERROR,
+            user_id=user_id,
+            error_type=type(exc).__name__,
+        )
+        raise
 
 
 def get_latest_scan(*, user_id: str | None = None) -> dict[str, Any] | None:
@@ -60,13 +92,37 @@ def get_scan_by_id(scan_id: str, *, user_id: str | None = None) -> dict[str, Any
 
 def get_trade_by_id(scan_result: dict[str, Any], trade_id: str) -> dict[str, Any] | None:
     if not scan_result or not trade_id:
+        log_event(
+            logger,
+            "persistence_read",
+            level=logging.WARNING,
+            operation="trade_lookup",
+            found=False,
+        )
         return None
 
     for collection_name in ("qualified_trades", "alerts", "near_miss_trades"):
         for trade in scan_result.get(collection_name, []) or []:
             if trade.get("trade_id") == trade_id:
+                log_event(
+                    logger,
+                    "persistence_read",
+                    operation="trade_lookup",
+                    scan_id=((scan_result.get("scan_metadata") or {}).get("scan_id")),
+                    trade_id=trade_id,
+                    found=True,
+                )
                 return trade
 
+    log_event(
+        logger,
+        "persistence_read",
+        level=logging.WARNING,
+        operation="trade_lookup",
+        scan_id=((scan_result.get("scan_metadata") or {}).get("scan_id")),
+        trade_id=trade_id,
+        found=False,
+    )
     return None
 
 
