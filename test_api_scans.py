@@ -98,3 +98,21 @@ def test_scan_routes_accept_cors_preflight():
 
     assert response.status_code == 200
     assert response.headers["access-control-allow-origin"] == "http://127.0.0.1:5173"
+
+
+def test_scan_routes_accept_vercel_preflight_origin():
+    client = TestClient(app)
+
+    response = client.options(
+        "/auth/login",
+        headers={
+            "Origin": "https://options-trading-app-nu.vercel.app",
+            "Access-Control-Request-Method": "POST",
+        },
+    )
+
+    assert response.status_code == 200
+    assert (
+        response.headers["access-control-allow-origin"]
+        == "https://options-trading-app-nu.vercel.app"
+    )
