@@ -123,15 +123,20 @@ function portfolioPosture(portfolioSummary: PortfolioSummary | undefined) {
 
 
 export function selectOverviewCockpitModel(scanResult: ScanResult) {
-  const topTrade = scanResult.summary.top_overall ?? scanResult.qualified_trades[0] ?? null;
-  const providerErrors = scanResult.diagnostics.provider_errors.length;
-  const missingTickers = scanResult.diagnostics.missing_tickers;
-  const qualifiedCount = scanResult.summary.qualified_count;
-  const alertsCount = scanResult.alerts.length;
+  const diagnostics = scanResult.diagnostics ?? { missing_tickers: [], provider_errors: [] };
+  const qualifiedTrades = scanResult.qualified_trades ?? [];
+  const alerts = scanResult.alerts ?? [];
+  const topTrade = scanResult.summary.top_overall ?? qualifiedTrades[0] ?? null;
+  const providerErrors = (diagnostics.provider_errors ?? []).length;
+  const missingTickers = diagnostics.missing_tickers ?? [];
+  const qualifiedCount = scanResult.summary.qualified_count ?? qualifiedTrades.length;
+  const alertsCount = alerts.length;
   const historySummary = scanResult.history_context.historical_intelligence_summary ?? {};
   const historyMetadata = historySummary.metadata ?? {};
   const recurringPatterns = historySummary.signal_quality_summary?.recurring_high_quality_patterns ?? [];
   const portfolio = portfolioPosture(scanResult.portfolio_summary);
+  const performance = (diagnostics.performance ?? {}) as Record<string, unknown>;
+  const cache = (diagnostics.cache ?? {}) as Record<string, unknown>;
 
   let trustTone: "info" | "success" | "warning" = "info";
   let trustTitle = "Healthy run, no strong candidates";
@@ -214,6 +219,12 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
       notes: [
         missingTickers.length > 0 ? `Missing tickers: ${missingTickers.join(", ")}` : null,
         providerErrors > 0 ? "Provider errors are present in the latest scan diagnostics." : null,
+        typeof performance.provider_duration_ms === "number"
+          ? `Provider duration ${(Number(performance.provider_duration_ms) / 1000).toFixed(2)}s.`
+          : null,
+        ((cache.market_data as { hit?: boolean } | undefined)?.hit)
+          ? "The latest scan reused short-lived cached market data."
+          : null,
       ].filter(Boolean) as string[],
     },
     portfolio: {
@@ -241,14 +252,15 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
 
 
 export function selectQualifiedBoardModel(scanResult: ScanResult) {
+  const diagnostics = scanResult.diagnostics ?? { missing_tickers: [], provider_errors: [] };
   const thresholds = currentScanThresholds(scanResult);
   const portfolio = portfolioPosture(scanResult.portfolio_summary);
   const caveats = [
-    scanResult.diagnostics.provider_errors.length > 0
+    (diagnostics.provider_errors ?? []).length > 0
       ? "Provider issues were reported in this run, so the ranked board may be incomplete."
       : null,
-    scanResult.diagnostics.missing_tickers.length > 0
-      ? `Missing tickers: ${scanResult.diagnostics.missing_tickers.join(", ")}`
+    (diagnostics.missing_tickers ?? []).length > 0
+      ? `Missing tickers: ${(diagnostics.missing_tickers ?? []).join(", ")}`
       : null,
     portfolio.topTicker?.share_pct && portfolio.topTicker.share_pct >= 30
       ? `${portfolio.topTicker.ticker} represents ${portfolio.topTicker.share_pct}% of the current qualified set.`
@@ -275,6 +287,20 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
       },
     ],
     caveats,
+    emptyState: (diagnostics.provider_errors ?? []).length > 0
+      ? {
+          title: "No qualified trades under degraded coverage",
+          message: "The latest scan kept running despite provider failures. Review alerts and diagnostics before concluding there were no qualified setups.",
+        }
+      : (diagnostics.missing_tickers ?? []).length > 0 || diagnostics.partial_result
+        ? {
+            title: "No qualified trades under partial coverage",
+            message: "Some tickers were unavailable during the scan, so this empty board may reflect incomplete market coverage.",
+          }
+        : {
+            title: "No qualified trades",
+            message: "The latest scan did not produce any qualified opportunities.",
+          },
     items: scanResult.qualified_trades.map((trade, index) => ({
       id: trade.trade_id ?? `${scanResult.scan_metadata.scan_id}-${index}`,
       href: buildTradeDetailPath(scanResult.scan_metadata.scan_id, trade.trade_id),

@@ -105,6 +105,9 @@ export type ScanDiagnostics = {
     short_strike: number | null;
     long_strike: number | null;
   } | null;
+  partial_result?: boolean;
+  performance?: Record<string, unknown>;
+  cache?: Record<string, unknown>;
 };
 
 export type HistoryMetadata = {

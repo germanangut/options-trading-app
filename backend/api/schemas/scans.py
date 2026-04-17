@@ -73,6 +73,9 @@ class ScanDiagnosticsResponse(BaseModel):
     provider_errors: list[dict[str, Any]]
     alerts_export_path: str | None = None
     top_overall_identity: dict[str, Any] | None = None
+    partial_result: bool = False
+    performance: dict[str, Any] = Field(default_factory=dict)
+    cache: dict[str, Any] = Field(default_factory=dict)
 
 
 class ScanResultResponse(BaseModel):

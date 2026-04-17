@@ -3,7 +3,7 @@ import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { MetricCard } from "../components/ui/MetricCard";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
-import { selectPortfolioModel } from "../features/scans/selectors/scanSelectors";
+import { selectPortfolioModel, selectScanReliabilityNotice } from "../features/scans/selectors/scanSelectors";
 import { formatNumber } from "../lib/formatters";
 
 export function PortfolioPage() {
@@ -26,9 +26,15 @@ export function PortfolioPage() {
   }
 
   const portfolio = selectPortfolioModel(latestScan.data);
+  const reliabilityNotice = selectScanReliabilityNotice(latestScan.data);
 
   return (
     <div className="grid gap-6">
+      {reliabilityNotice ? (
+        <Banner tone={reliabilityNotice.tone} title={reliabilityNotice.title}>
+          {reliabilityNotice.message}
+        </Banner>
+      ) : null}
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {portfolio.summaryCards.map((card) => (
           <MetricCard key={card.label} label={card.label} value={card.value} />

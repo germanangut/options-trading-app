@@ -199,5 +199,8 @@ def build_scan_result(raw_output: dict[str, Any], request: ScanRequest, scan_id:
             "provider_errors": deepcopy(raw_output.get("provider_errors", [])),
             "alerts_export_path": raw_output.get("alerts_export_path"),
             "top_overall_identity": _trade_identity(top_overall),
+            "partial_result": bool(raw_output.get("partial_result", False)),
+            "performance": deepcopy(raw_output.get("performance", {})),
+            "cache": deepcopy(raw_output.get("cache", {})),
         },
     }

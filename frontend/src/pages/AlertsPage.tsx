@@ -9,6 +9,10 @@ import { formatNumber, formatTradeLabel } from "../lib/formatters";
 export function AlertsPage() {
   const latestScan = useLatestScan();
 
+  if (latestScan.isLoading) {
+    return <EmptyState title="Loading alerts" message="Waiting for the latest alert list from the backend." />;
+  }
+
   if (latestScan.isError) {
     return (
       <Banner tone="danger" title="Unable to load alerts">
@@ -29,11 +33,20 @@ export function AlertsPage() {
         <Banner tone="warning" title="Provider issues detected">
           The latest scan reported provider errors, so the alert list may be incomplete.
         </Banner>
+      ) : alerts.partialResult || alerts.missingTickers.length > 0 ? (
+        <Banner tone="warning" title="Partial alert coverage">
+          Some tickers were unavailable during the latest scan, so an empty alert board may reflect incomplete coverage rather than a clean market.
+        </Banner>
       ) : null}
 
       <Card title="Alerts" subtitle={`${alerts.total} alert(s) currently surfaced by the backend.`}>
         {alerts.rows.length === 0 ? (
-          <EmptyState title="No alerts" message="Nothing currently cleared the strongest alert thresholds." />
+          <EmptyState
+            title={alerts.partialResult || alerts.missingTickers.length > 0 ? "No alerts under partial coverage" : "No alerts"}
+            message={alerts.partialResult || alerts.missingTickers.length > 0
+              ? "The latest scan kept partial results, but some tickers were unavailable. Review diagnostics before treating this as a fully clean pass."
+              : "Nothing currently cleared the strongest alert thresholds."}
+          />
         ) : (
           <div className="grid gap-3">
             {alerts.rows.map(({ id, trade, score, tag }) => (

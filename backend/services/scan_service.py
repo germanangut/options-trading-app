@@ -7,6 +7,7 @@ payload after mapping from the canonical top-level sections it needs.
 """
 
 import logging
+import time
 from typing import Any
 
 from backend.contracts.scan_result import ScanRequest, build_scan_result
@@ -40,6 +41,7 @@ def run_scan(
     )
 
     try:
+        started_at = time.perf_counter()
         raw_output = run_scan_engine(
             profile_name=request.profile,
             group_name=request.ticker_group,
@@ -53,14 +55,20 @@ def run_scan(
         )
 
         scan_result = build_scan_result(raw_output, request)
-        save_scan_result(scan_result, user_id=user_id)
+        history_started_at = time.perf_counter()
         scan_result["history_context"] = {
             "historical_intelligence_summary": get_historical_intelligence_summary(
                 limit=5,
                 user_id=user_id,
             ),
         }
+        history_duration_ms = round((time.perf_counter() - history_started_at) * 1000, 2)
+
+        persistence_started_at = time.perf_counter()
         persisted = save_scan_result(scan_result, user_id=user_id)
+        persistence_duration_ms = round(
+            (time.perf_counter() - persistence_started_at) * 1000, 2
+        )
         log_event(
             logger,
             "scan_completed",
@@ -69,6 +77,11 @@ def run_scan(
             qualified_count=((persisted.get("summary") or {}).get("qualified_count")),
             alerts_count=len(persisted.get("alerts", []) or []),
             provider=((persisted.get("diagnostics") or {}).get("provider") or (persisted.get("scan_metadata") or {}).get("provider")),
+            partial_result=((persisted.get("diagnostics") or {}).get("partial_result", False)),
+            provider_duration_ms=((persisted.get("diagnostics") or {}).get("performance", {}) or {}).get("provider_duration_ms"),
+            persistence_duration_ms=persistence_duration_ms,
+            history_duration_ms=history_duration_ms,
+            scan_duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
         )
         return persisted
     except Exception as exc:

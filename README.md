@@ -119,7 +119,61 @@ HISTORY_DIR=.history
 CACHE_DIR=.cache
 SCAN_DATABASE_PATH=.history/scan_store.sqlite
 AUTH_SESSION_TTL_HOURS=168
+MARKET_DATA_CACHE_TTL_SECONDS=60
+PROVIDER_TIMEOUT_SECONDS=12
+PROVIDER_RETRY_COUNT=2
+PROVIDER_RETRY_BACKOFF_SECONDS=0.35
+PROVIDER_CONTRACTS_CACHE_TTL_SECONDS=120
+PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS=45
+PROVIDER_UNDERLYING_CACHE_TTL_SECONDS=15
 ```
+
+## PU-14 performance and reliability posture
+
+PU-14 improves runtime resilience and latency visibility without changing trading logic, scoring rules, or the existing top-level scan contract.
+
+### Retry policy
+
+- Provider HTTP operations use bounded retries only for transient conditions such as timeouts, connection failures, and retryable upstream HTTP responses like `408`, `429`, `500`, `502`, `503`, and `504`
+- Default retry count is small: `2` retries beyond the initial attempt
+- Retries are timeout-aware and preserve the per-request timeout budget per attempt through `PROVIDER_TIMEOUT_SECONDS`
+- Auth, validation, malformed payload, and other non-transient provider failures are not retried
+- Retry scheduling is logged with structured request context so repeated provider instability is visible in production logs
+
+### Cache policy
+
+- Aggregated market-data responses use a short-lived cache controlled by `MARKET_DATA_CACHE_TTL_SECONDS`
+- Provider sub-reads are cached independently with explicit TTLs:
+	- contracts: `PROVIDER_CONTRACTS_CACHE_TTL_SECONDS`
+	- option snapshots: `PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS`
+	- underlying trades: `PROVIDER_UNDERLYING_CACHE_TTL_SECONDS`
+- Degraded provider responses are not persisted into the aggregated market-data cache, which avoids re-serving known provider failures as if they were healthy reads
+- Cache behavior is surfaced in structured diagnostics and logs as hit/miss metadata
+
+### Graceful degradation behavior
+
+- A single ticker failure no longer fails the whole scan when other tickers can still be processed safely
+- Scan output preserves successful ticker results, failed ticker coverage gaps, and per-ticker diagnostics in the same response
+- Empty option chains, partial snapshot coverage, malformed provider payloads, and missing underlying data degrade individual tickers instead of terminating the full run when partial output is still possible
+- Frontend surfaces now distinguish between genuinely empty result sets and empty boards produced under partial coverage or provider degradation
+
+### Performance visibility
+
+- Structured logs now make scan bottlenecks easier to isolate through:
+	- total scan duration
+	- provider duration
+	- per-ticker processing duration
+	- persistence duration
+	- cache hit/miss behavior
+- Additive response diagnostics now include non-breaking performance and cache metadata for frontend messaging and operational debugging
+
+### Known limitations deferred beyond PU-14
+
+- no distributed or shared cache layer across backend instances
+- no circuit breaker or provider failover beyond bounded retries and graceful degradation
+- no background scan queue, concurrency shaping, or job orchestration for large burst traffic
+- no dedicated metrics backend or tracing export; visibility remains log-first
+- no stale-while-revalidate strategy or proactive refresh of cached provider reads
 
 ## Common usage patterns
 

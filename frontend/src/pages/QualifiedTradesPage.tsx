@@ -53,7 +53,7 @@ export function QualifiedTradesPage() {
       ) : null}
 
       {qualifiedTrades.items.length === 0 ? (
-        <EmptyState title="No qualified trades" message="The latest scan did not produce any qualified opportunities." />
+        <EmptyState title={qualifiedTrades.emptyState.title} message={qualifiedTrades.emptyState.message} />
       ) : (
         <div className="grid gap-4">
           {qualifiedTrades.items.map((item) => (

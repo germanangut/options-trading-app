@@ -7,6 +7,62 @@ import type {
   ScanResult,
 } from "../../../types/api";
 
+
+function scanDiagnostics(scanResult: ScanResult) {
+  return scanResult.diagnostics ?? {
+    missing_tickers: [],
+    provider_errors: [],
+    alerts_export_path: null,
+    top_overall_identity: null,
+  };
+}
+
+
+export function selectScanReliabilityNotice(scanResult?: ScanResult | null) {
+  if (!scanResult) {
+    return null;
+  }
+
+  const diagnostics = scanDiagnostics(scanResult);
+  const providerErrors = diagnostics.provider_errors ?? [];
+  const missingTickers = diagnostics.missing_tickers ?? [];
+  const performance = diagnostics.performance ?? {};
+  const cache = diagnostics.cache ?? {};
+  const providerDurationMs = Number(performance.provider_duration_ms ?? NaN);
+  const providerDurationNote = Number.isFinite(providerDurationMs)
+    ? `Provider phase completed in ${(providerDurationMs / 1000).toFixed(2)}s.`
+    : null;
+  const aggregateCacheHit = Boolean((cache as Record<string, unknown>).market_data && ((cache as Record<string, { hit?: boolean }>).market_data?.hit));
+
+  if (providerErrors.length > 0) {
+    return {
+      tone: "warning" as const,
+      title: "Partial provider degradation",
+      message: "Some tickers failed during provider retrieval. Successful results remain usable, but coverage is incomplete.",
+      notes: [
+        `Provider errors: ${providerErrors.length}`,
+        providerDurationNote,
+        aggregateCacheHit ? "This response reused short-lived cached market data." : null,
+      ].filter(Boolean) as string[],
+    };
+  }
+
+  if (missingTickers.length > 0 || diagnostics.partial_result) {
+    return {
+      tone: "warning" as const,
+      title: "Partial coverage",
+      message: `${missingTickers.length} ticker(s) were unavailable during the latest scan, so empty boards may reflect degraded coverage rather than zero opportunities.`,
+      notes: [
+        missingTickers.length > 0 ? `Missing: ${missingTickers.join(", ")}` : null,
+        providerDurationNote,
+        aggregateCacheHit ? "This response reused short-lived cached market data." : null,
+      ].filter(Boolean) as string[],
+    };
+  }
+
+  return null;
+}
+
 function fallbackScore(trade: Pick<QualifiedTradeRow, "adjusted_score" | "score">) {
   return trade.adjusted_score ?? trade.score ?? null;
 }
@@ -32,6 +88,7 @@ export function buildTemporaryTradeId(trade: Pick<
 }
 
 export function selectOverviewModel(scanResult: ScanResult) {
+  const diagnostics = scanDiagnostics(scanResult);
   const topOpportunity = scanResult.summary.top_overall;
 
   return {
@@ -53,8 +110,8 @@ export function selectOverviewModel(scanResult: ScanResult) {
       selectedStrategyKeys: scanResult.scan_metadata.selected_strategy_keys,
     },
     coverage: {
-      missingTickers: scanResult.diagnostics.missing_tickers,
-      providerErrors: scanResult.diagnostics.provider_errors,
+      missingTickers: diagnostics.missing_tickers ?? [],
+      providerErrors: diagnostics.provider_errors ?? [],
     },
   };
 }
@@ -71,9 +128,12 @@ export function selectQualifiedTradesModel(scanResult: ScanResult) {
 }
 
 export function selectAlertsModel(scanResult: ScanResult) {
+  const diagnostics = scanDiagnostics(scanResult);
   return {
     total: scanResult.alerts.length,
-    providerErrors: scanResult.diagnostics.provider_errors,
+    providerErrors: diagnostics.provider_errors ?? [],
+    missingTickers: diagnostics.missing_tickers ?? [],
+    partialResult: Boolean(diagnostics.partial_result),
     rows: scanResult.alerts.map((alert: AlertItem) => ({
       id: buildTemporaryTradeId(alert),
       trade: alert,
@@ -147,6 +207,7 @@ export function selectHistoryModel(scanResult: ScanResult) {
 }
 
 export function selectDailySummaryModel(scanResult: ScanResult) {
+  const diagnostics = scanDiagnostics(scanResult);
   const summary: DailySummary = scanResult.daily_summary ?? {};
 
   return {
@@ -167,10 +228,10 @@ export function selectDailySummaryModel(scanResult: ScanResult) {
     ],
     mostStableAlert: summary.most_stable_alert ?? null,
     notes: [
-      scanResult.diagnostics.missing_tickers.length > 0
-        ? `Missing tickers: ${scanResult.diagnostics.missing_tickers.join(", ")}`
+      (diagnostics.missing_tickers ?? []).length > 0
+        ? `Missing tickers: ${(diagnostics.missing_tickers ?? []).join(", ")}`
         : null,
-      scanResult.diagnostics.provider_errors.length > 0
+      (diagnostics.provider_errors ?? []).length > 0
         ? "Provider errors were reported in the latest scan."
         : null,
     ].filter(Boolean) as string[],

@@ -6,6 +6,7 @@ import time
 import json
 import hashlib
 from pathlib import Path
+from typing import Any
 
 import requests
 from dotenv import load_dotenv
@@ -35,7 +36,264 @@ OPTION_SNAPSHOTS_URL = f"{ALPACA_DATA_BASE_URL}/v1beta1/options/snapshots"
 #STOCK_LATEST_QUOTES_URL = f"{ALPACA_DATA_BASE_URL}/v2/stocks/quotes/latest"
 STOCK_LATEST_TRADES_URL = f"{ALPACA_DATA_BASE_URL}/v2/stocks/trades/latest"
 
-CACHE_TTL_SECONDS = 60
+RETRIABLE_STATUS_CODES = {408, 429, 500, 502, 503, 504}
+
+
+class ProviderRequestError(RuntimeError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        category: str,
+        transient: bool,
+        status_code: int | None = None,
+    ):
+        super().__init__(message)
+        self.category = category
+        self.transient = transient
+        self.status_code = status_code
+
+
+def _provider_runtime_settings() -> dict[str, float | int]:
+    settings = get_settings()
+    return {
+        "market_data_cache_ttl_seconds": int(
+            settings.get("market_data_cache_ttl_seconds", 60)
+        ),
+        "provider_timeout_seconds": float(settings.get("provider_timeout_seconds", 12)),
+        "provider_retry_count": int(settings.get("provider_retry_count", 2)),
+        "provider_retry_backoff_seconds": float(
+            settings.get("provider_retry_backoff_seconds", 0.35)
+        ),
+        "provider_contracts_cache_ttl_seconds": int(
+            settings.get("provider_contracts_cache_ttl_seconds", 120)
+        ),
+        "provider_snapshots_cache_ttl_seconds": int(
+            settings.get("provider_snapshots_cache_ttl_seconds", 45)
+        ),
+        "provider_underlying_cache_ttl_seconds": int(
+            settings.get("provider_underlying_cache_ttl_seconds", 15)
+        ),
+    }
+
+
+def _safe_float(value):
+    if value in (None, ""):
+        return None
+
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _safe_int(value):
+    if value in (None, ""):
+        return None
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _build_cache_key(namespace, payload):
+    raw_key = json.dumps({"namespace": namespace, **payload}, sort_keys=True)
+    return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def _get_namespaced_cache_file_path(namespace, cache_key):
+    return get_cache_dir() / f"{namespace}_{cache_key}.json"
+
+
+def _read_cached_json(namespace, cache_key, ttl_seconds):
+    if ttl_seconds <= 0:
+        return None
+
+    cache_file = _get_namespaced_cache_file_path(namespace, cache_key)
+    if not cache_file.exists():
+        return None
+
+    try:
+        with cache_file.open("r", encoding="utf-8") as file_handle:
+            entry = json.load(file_handle)
+    except (json.JSONDecodeError, OSError):
+        return None
+
+    timestamp = entry.get("timestamp")
+    value = entry.get("value")
+    if timestamp is None or value is None:
+        return None
+
+    age = time.time() - timestamp
+    if age > ttl_seconds:
+        try:
+            cache_file.unlink()
+        except OSError:
+            pass
+        return None
+
+    return value
+
+
+def _write_cached_json(namespace, cache_key, value):
+    cache_file = _get_namespaced_cache_file_path(namespace, cache_key)
+    entry = {
+        "timestamp": time.time(),
+        "value": value,
+    }
+
+    try:
+        with cache_file.open("w", encoding="utf-8") as file_handle:
+            json.dump(entry, file_handle)
+    except OSError:
+        pass
+
+
+def _backoff_seconds(attempt_index, base_delay):
+    return round(base_delay * max(attempt_index, 1), 3)
+
+
+def _request_provider_json(
+    url,
+    *,
+    headers,
+    params,
+    operation,
+    ticker=None,
+    cache_namespace=None,
+    cache_ttl_seconds=0,
+):
+    runtime = _provider_runtime_settings()
+    max_attempts = max(1, int(runtime["provider_retry_count"]) + 1)
+    timeout_seconds = float(runtime["provider_timeout_seconds"])
+    backoff_seconds = float(runtime["provider_retry_backoff_seconds"])
+    cache_key = None
+
+    if cache_namespace:
+        cache_key = _build_cache_key(
+            cache_namespace,
+            {
+                "url": url,
+                "params": params,
+            },
+        )
+        cached_payload = _read_cached_json(cache_namespace, cache_key, cache_ttl_seconds)
+        if cached_payload is not None:
+            return cached_payload, {
+                "cache_hit": True,
+                "attempt_count": 0,
+                "status_code": 200,
+                "timeout_seconds": timeout_seconds,
+            }
+
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        request_started_at = time.perf_counter()
+        try:
+            response = requests.get(
+                url,
+                headers=headers,
+                params=params,
+                timeout=timeout_seconds,
+            )
+        except requests.exceptions.Timeout as exc:
+            last_error = ProviderRequestError(
+                "Provider request timed out.",
+                category="timeout",
+                transient=True,
+            )
+        except requests.exceptions.ConnectionError as exc:
+            last_error = ProviderRequestError(
+                "Provider network connection failed.",
+                category="network",
+                transient=True,
+            )
+        except requests.exceptions.RequestException as exc:
+            last_error = ProviderRequestError(
+                str(exc) or "Provider request failed.",
+                category="network",
+                transient=False,
+            )
+        else:
+            if response.status_code >= 400:
+                category = "http"
+                transient = response.status_code in RETRIABLE_STATUS_CODES
+                if response.status_code in {401, 403}:
+                    category = "auth"
+                    transient = False
+                elif 400 <= response.status_code < 500 and response.status_code not in RETRIABLE_STATUS_CODES:
+                    category = "validation"
+                    transient = False
+
+                last_error = ProviderRequestError(
+                    f"Provider returned HTTP {response.status_code}.",
+                    category=category,
+                    transient=transient,
+                    status_code=response.status_code,
+                )
+            else:
+                try:
+                    payload = response.json()
+                except ValueError as exc:
+                    last_error = ProviderRequestError(
+                        "Provider returned malformed JSON.",
+                        category="payload",
+                        transient=False,
+                        status_code=response.status_code,
+                    )
+                else:
+                    if not isinstance(payload, dict):
+                        last_error = ProviderRequestError(
+                            "Provider returned an unexpected payload shape.",
+                            category="payload",
+                            transient=False,
+                            status_code=response.status_code,
+                        )
+                    else:
+                        if cache_namespace and cache_key:
+                            _write_cached_json(cache_namespace, cache_key, payload)
+                        return payload, {
+                            "cache_hit": False,
+                            "attempt_count": attempt,
+                            "status_code": response.status_code,
+                            "timeout_seconds": timeout_seconds,
+                            "duration_ms": round(
+                                (time.perf_counter() - request_started_at) * 1000, 2
+                            ),
+                        }
+
+        duration_ms = round((time.perf_counter() - request_started_at) * 1000, 2)
+        if last_error is not None and last_error.transient and attempt < max_attempts:
+            retry_delay = _backoff_seconds(attempt, backoff_seconds)
+            log_event(
+                logger,
+                "provider_retry_scheduled",
+                level=logging.WARNING,
+                provider="alpaca",
+                operation=operation,
+                ticker=ticker,
+                attempt=attempt,
+                max_attempts=max_attempts,
+                duration_ms=duration_ms,
+                error_type=type(last_error).__name__,
+                error_category=last_error.category,
+                status_code=last_error.status_code,
+                retry_delay_seconds=retry_delay,
+            )
+            time.sleep(retry_delay)
+            continue
+
+        break
+
+    if last_error is None:
+        last_error = ProviderRequestError(
+            "Provider request failed.",
+            category="unknown",
+            transient=False,
+        )
+
+    raise last_error
 
 
 def get_cache_dir():
@@ -60,47 +318,16 @@ def get_cache_file_path(cache_key):
 
 
 def get_cached_market_data(cache_key):
-    cache_file = get_cache_file_path(cache_key)
-
-    if not cache_file.exists():
-        return None
-
-    try:
-        with cache_file.open("r", encoding="utf-8") as f:
-            entry = json.load(f)
-    except (json.JSONDecodeError, OSError):
-        return None
-
-    timestamp = entry.get("timestamp")
-    value = entry.get("value")
-
-    if timestamp is None or value is None:
-        return None
-
-    age = time.time() - timestamp
-    if age > CACHE_TTL_SECONDS:
-        try:
-            cache_file.unlink()
-        except OSError:
-            pass
-        return None
-
-    return value
+    runtime = _provider_runtime_settings()
+    return _read_cached_json(
+        "market_data",
+        cache_key,
+        int(runtime["market_data_cache_ttl_seconds"]),
+    )
 
 
 def set_cached_market_data(cache_key, value):
-    cache_file = get_cache_file_path(cache_key)
-
-    entry = {
-        "timestamp": time.time(),
-        "value": value,
-    }
-
-    try:
-        with cache_file.open("w", encoding="utf-8") as f:
-            json.dump(entry, f)
-    except OSError:
-        pass
+    _write_cached_json("market_data", cache_key, value)
     
     
 
@@ -117,6 +344,15 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
     cached_value = get_cached_market_data(cache_key)
 
     if cached_value is not None:
+        cached_value.setdefault("cache", {})
+        cached_value["cache"]["market_data"] = {
+            "hit": True,
+            "ttl_seconds": int(_provider_runtime_settings()["market_data_cache_ttl_seconds"]),
+        }
+        cached_value.setdefault("performance", {})
+        cached_value["performance"]["provider_duration_ms"] = round(
+            (time.perf_counter() - started_at) * 1000, 2
+        )
         log_event(
             logger,
             "provider_request_completed",
@@ -132,7 +368,17 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
     else:
         result = get_mock_market_data(tickers)
 
-    set_cached_market_data(cache_key, result)
+    result.setdefault("cache", {})
+    result["cache"]["market_data"] = {
+        "hit": False,
+        "ttl_seconds": int(_provider_runtime_settings()["market_data_cache_ttl_seconds"]),
+    }
+    result.setdefault("performance", {})
+    result["performance"]["provider_duration_ms"] = round(
+        (time.perf_counter() - started_at) * 1000, 2
+    )
+    if not result.get("provider_errors"):
+        set_cached_market_data(cache_key, result)
     log_event(
         logger,
         "provider_request_completed",
@@ -179,6 +425,28 @@ def get_mock_market_data(tickers):
         "missing_tickers": missing_tickers,
         "provider": "alpaca-mock-fallback",
         "provider_errors": [],
+        "ticker_diagnostics": [
+            {
+                "ticker": ticker,
+                "provider_status": "ok" if ticker in market_data else "missing",
+                "provider": "alpaca-mock-fallback",
+                "cache_hit": False,
+                "provider_diagnostics": {
+                    "ticker": ticker,
+                    "fallback_mode": True,
+                    "valid_contract_count": len((market_data.get(ticker) or {}).get("contracts", [])),
+                    "underlying_price_found": bool((market_data.get(ticker) or {}).get("underlying_price") is not None),
+                },
+            }
+            for ticker in tickers
+        ],
+        "cache": {
+            "market_data": {"hit": False},
+            "contracts": {"hits": 0, "misses": 0},
+            "snapshots": {"hits": 0, "misses": 0},
+            "underlying": {"hits": 0, "misses": 0},
+        },
+        "performance": {},
     }
     log_event(
         logger,
@@ -195,6 +463,12 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
     market_data = {}
     missing_tickers = []
     provider_errors = []
+    ticker_diagnostics = []
+    cache_summary = {
+        "contracts": {"hits": 0, "misses": 0},
+        "snapshots": {"hits": 0, "misses": 0},
+        "underlying": {"hits": 0, "misses": 0},
+    }
 
     for ticker in tickers:
         ticker_started_at = time.perf_counter()
@@ -210,9 +484,27 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                 dte_min=dte_min,
                 dte_max=dte_max,
             )
+            cache_summary["contracts"]["hits" if discovered["request_metadata"].get("cache_hit") else "misses"] += 1
 
             if not discovered["contracts"]:
                 missing_tickers.append(ticker)
+                ticker_diagnostics.append(
+                    {
+                        "ticker": ticker,
+                        "provider_status": "missing",
+                        "provider": "alpaca",
+                        "cache_hit": bool(discovered["request_metadata"].get("cache_hit")),
+                        "provider_diagnostics": {
+                            "ticker": ticker,
+                            "chosen_expiration": discovered.get("chosen_expiration"),
+                            "chosen_dte": discovered.get("chosen_dte"),
+                            "discovered_contract_count": 0,
+                            "reason": "empty_option_chain",
+                            "request_attempts": discovered["request_metadata"].get("attempt_count", 0),
+                        },
+                        "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                    }
+                )
                 log_event(
                     logger,
                     "provider_request_completed",
@@ -226,19 +518,48 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
 
             option_symbols = [contract["symbol"] for contract in discovered["contracts"]]
             option_snapshots = fetch_option_snapshots_for_symbols(option_symbols)
+            cache_summary["snapshots"]["hits"] += option_snapshots["request_metadata"].get("cache_hits", 0)
+            cache_summary["snapshots"]["misses"] += option_snapshots["request_metadata"].get("cache_misses", 0)
             underlying_trade = fetch_underlying_stock_trade(ticker)
+            cache_summary["underlying"]["hits" if underlying_trade["request_metadata"].get("cache_hit") else "misses"] += 1
 
             normalized = normalize_discovered_contracts(
                         ticker=ticker,
                         discovered_contracts=discovered["contracts"],
-                        option_snapshots=option_snapshots,
-                        underlying_trade=underlying_trade,
+                        option_snapshots=option_snapshots["snapshots"],
+                        underlying_trade=underlying_trade["trade"],
                         chosen_expiration=discovered["chosen_expiration"],
                         chosen_dte=discovered["chosen_dte"],
                     )
 
-            if normalized is None:
+            normalized["provider_diagnostics"].update(
+                {
+                    "contracts_request": discovered["request_metadata"],
+                    "snapshots_request": option_snapshots["request_metadata"],
+                    "underlying_request": underlying_trade["request_metadata"],
+                }
+            )
+
+            if normalized is None or normalized.get("underlying_price") is None:
                 missing_tickers.append(ticker)
+                reason = "underlying_price_missing" if normalized else "normalization_failed"
+                provider_errors.append(
+                    {
+                        "ticker": ticker,
+                        "error": reason,
+                        "category": "payload",
+                    }
+                )
+                ticker_diagnostics.append(
+                    {
+                        "ticker": ticker,
+                        "provider_status": "missing",
+                        "provider": "alpaca",
+                        "cache_hit": bool(discovered["request_metadata"].get("cache_hit")),
+                        "provider_diagnostics": (normalized or {}).get("provider_diagnostics", {}),
+                        "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                    }
+                )
                 log_event(
                     logger,
                     "provider_request_completed",
@@ -255,6 +576,20 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             if not normalized["contracts"]:
                 missing_tickers.append(ticker)
 
+            ticker_diagnostics.append(
+                {
+                    "ticker": ticker,
+                    "provider_status": "ok" if normalized["contracts"] else "missing",
+                    "provider": "alpaca",
+                    "cache_hit": bool(
+                        discovered["request_metadata"].get("cache_hit")
+                        and underlying_trade["request_metadata"].get("cache_hit")
+                    ),
+                    "provider_diagnostics": normalized["provider_diagnostics"],
+                    "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                }
+            )
+
             log_event(
                 logger,
                 "provider_request_completed",
@@ -268,10 +603,28 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             )
 
         except Exception as exc:
+            if ticker not in missing_tickers:
+                missing_tickers.append(ticker)
             provider_errors.append(
                 {
                     "ticker": ticker,
                     "error": str(exc),
+                    "error_type": type(exc).__name__,
+                    "category": getattr(exc, "category", "provider"),
+                    "status_code": getattr(exc, "status_code", None),
+                }
+            )
+            ticker_diagnostics.append(
+                {
+                    "ticker": ticker,
+                    "provider_status": "error",
+                    "provider": "alpaca",
+                    "cache_hit": False,
+                    "provider_diagnostics": {
+                        "ticker": ticker,
+                        "reason": str(exc),
+                    },
+                    "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
                 }
             )
             log_event(
@@ -289,6 +642,9 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
         "missing_tickers": missing_tickers,
         "provider": "alpaca-contracts-plus-symbol-snapshots",
         "provider_errors": provider_errors,
+        "ticker_diagnostics": ticker_diagnostics,
+        "cache": cache_summary,
+        "performance": {},
     }
 
 
@@ -305,15 +661,15 @@ def discover_option_contracts_for_window(ticker, dte_min=30, dte_max=45, limit=1
         "limit": limit,
     }
 
-    response = requests.get(
+    raw, request_metadata = _request_provider_json(
         OPTION_CONTRACTS_URL,
         headers=alpaca_headers(),
         params=params,
-        timeout=20,
+        operation="discover_contracts",
+        ticker=ticker,
+        cache_namespace="provider_contracts",
+        cache_ttl_seconds=int(_provider_runtime_settings()["provider_contracts_cache_ttl_seconds"]),
     )
-    response.raise_for_status()
-
-    raw = response.json()
 
     raw_contracts = extract_contract_list(raw)
     grouped = group_discovered_contracts_by_expiration(raw_contracts)
@@ -345,12 +701,14 @@ def discover_option_contracts_for_window(ticker, dte_min=30, dte_max=45, limit=1
             "contracts": [],
             "chosen_expiration": None,
             "chosen_dte": None,
+            "request_metadata": request_metadata,
         }
 
     return {
         "contracts": chosen_contracts,
         "chosen_expiration": expiration_date,
         "chosen_dte": chosen_dte,
+        "request_metadata": request_metadata,
     }
 
 
@@ -418,24 +776,50 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
     Returns a dict keyed by option symbol.
     """
     if not option_symbols:
-        return {}
+        return {
+            "snapshots": {},
+            "request_metadata": {
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "chunk_count": 0,
+                "attempt_count": 0,
+                "errors": [],
+            },
+        }
 
     all_snapshots = {}
+    cache_hits = 0
+    cache_misses = 0
+    total_attempts = 0
+    errors = []
 
     for symbol_chunk in chunk_list(option_symbols, chunk_size):
         params = {
             "symbols": ",".join(symbol_chunk),
         }
 
-        response = requests.get(
-            OPTION_SNAPSHOTS_URL,
-            headers=alpaca_headers(),
-            params=params,
-            timeout=20,
-        )
-        response.raise_for_status()
+        try:
+            raw, request_metadata = _request_provider_json(
+                OPTION_SNAPSHOTS_URL,
+                headers=alpaca_headers(),
+                params=params,
+                operation="fetch_option_snapshots",
+                cache_namespace="provider_snapshots",
+                cache_ttl_seconds=int(_provider_runtime_settings()["provider_snapshots_cache_ttl_seconds"]),
+            )
+        except ProviderRequestError as exc:
+            errors.append(
+                {
+                    "message": str(exc),
+                    "category": exc.category,
+                    "status_code": exc.status_code,
+                }
+            )
+            continue
 
-        raw = response.json()
+        cache_hits += 1 if request_metadata.get("cache_hit") else 0
+        cache_misses += 0 if request_metadata.get("cache_hit") else 1
+        total_attempts += int(request_metadata.get("attempt_count", 0))
 
         chunk_snapshots = {}
         for key in ["snapshots", "data"]:
@@ -446,7 +830,16 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
 
         all_snapshots.update(chunk_snapshots)
 
-    return all_snapshots
+    return {
+        "snapshots": all_snapshots,
+        "request_metadata": {
+            "cache_hits": cache_hits,
+            "cache_misses": cache_misses,
+            "chunk_count": len(list(chunk_list(option_symbols, chunk_size))),
+            "attempt_count": total_attempts,
+            "errors": errors,
+        },
+    }
 
 
 def fetch_underlying_stock_trade(ticker):
@@ -454,22 +847,28 @@ def fetch_underlying_stock_trade(ticker):
         "symbols": ticker,
     }
 
-    response = requests.get(
+    raw, request_metadata = _request_provider_json(
         STOCK_LATEST_TRADES_URL,
         headers=alpaca_headers(),
         params=params,
-        timeout=20,
+        operation="fetch_underlying_trade",
+        ticker=ticker,
+        cache_namespace="provider_underlying",
+        cache_ttl_seconds=int(_provider_runtime_settings()["provider_underlying_cache_ttl_seconds"]),
     )
-    response.raise_for_status()
-
-    raw = response.json()
 
     for key in ["trades", "data"]:
         value = raw.get(key)
         if isinstance(value, dict):
-            return value.get(ticker)
+            return {
+                "trade": value.get(ticker),
+                "request_metadata": request_metadata,
+            }
 
-    return None
+    return {
+        "trade": None,
+        "request_metadata": request_metadata,
+    }
 
 
 def normalize_discovered_contracts(
@@ -533,6 +932,7 @@ def normalize_discovered_contracts(
             "discovered_symbol_count": len(discovered_symbols),
             "snapshot_symbol_count": len(snapshot_symbols),
             "matching_symbol_count": len(matching_symbols),
+            "degraded": bool(len(normalized_contracts) != len(discovered_contracts) or underlying_price is None),
         },
     }
 
@@ -560,8 +960,8 @@ def normalize_contract(raw_contract):
 
     open_interest_raw = raw_contract.get("open_interest")
 
-    strike = float(strike_raw) if strike_raw is not None else None
-    open_interest = int(open_interest_raw) if open_interest_raw is not None else None
+    strike = _safe_float(strike_raw)
+    open_interest = _safe_int(open_interest_raw)
 
     return {
         "strike": strike,
@@ -583,14 +983,22 @@ def normalize_discovered_contract(raw_contract, option_snapshots):
     open_interest_raw = raw_contract.get("open_interest")
 
     snapshot = option_snapshots.get(contract_symbol, {})
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+
     latest_quote = snapshot.get("latestQuote", {})
+    if not isinstance(latest_quote, dict):
+        latest_quote = {}
+
     greeks = snapshot.get("greeks", {})
 
     if greeks is None:
         greeks = {}
+    if not isinstance(greeks, dict):
+        greeks = {}
 
-    strike = float(strike_raw) if strike_raw is not None else None
-    open_interest = int(open_interest_raw) if open_interest_raw is not None else None
+    strike = _safe_float(strike_raw)
+    open_interest = _safe_int(open_interest_raw)
 
     return {
         "strike": strike,
@@ -608,7 +1016,7 @@ def normalize_underlying_price(underlying_trade):
     if not isinstance(underlying_trade, dict):
         return None
 
-    price = underlying_trade.get("p")
+    price = _safe_float(underlying_trade.get("p"))
 
     if price is not None:
         return round(float(price), 4)

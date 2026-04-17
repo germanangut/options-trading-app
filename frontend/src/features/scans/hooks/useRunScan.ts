@@ -8,9 +8,13 @@ export function useRunScan() {
   const queryClient = useQueryClient();
 
   return useMutation({
+    mutationKey: ["run-scan"],
     mutationFn: (payload: ScanRequest) => runScan(payload),
     onSuccess: (data) => {
       queryClient.setQueryData(QUERY_KEYS.latestScan, data);
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: QUERY_KEYS.latestScan });
     },
   });
 }

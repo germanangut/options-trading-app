@@ -22,6 +22,20 @@ services:
         value: /var/data/scan_store.sqlite
       - key: AUTH_SESSION_TTL_HOURS
         value: 168
+      - key: MARKET_DATA_CACHE_TTL_SECONDS
+        value: 60
+      - key: PROVIDER_TIMEOUT_SECONDS
+        value: 12
+      - key: PROVIDER_RETRY_COUNT
+        value: 2
+      - key: PROVIDER_RETRY_BACKOFF_SECONDS
+        value: 0.35
+      - key: PROVIDER_CONTRACTS_CACHE_TTL_SECONDS
+        value: 120
+      - key: PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS
+        value: 45
+      - key: PROVIDER_UNDERLYING_CACHE_TTL_SECONDS
+        value: 15
       - key: CORS_ALLOW_ORIGINS
         sync: false
       - key: CORS_ALLOW_ORIGIN_REGEX

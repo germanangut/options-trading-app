@@ -1,6 +1,15 @@
 import { API_BASE_URL } from "./constants";
 import { getAuthToken } from "../features/auth/authStorage";
 
+
+const DEFAULT_REQUEST_TIMEOUT_MS = 20000;
+
+
+function resolveRequestTimeoutMs() {
+  const configured = Number(import.meta.env.VITE_API_REQUEST_TIMEOUT_MS ?? DEFAULT_REQUEST_TIMEOUT_MS);
+  return Number.isFinite(configured) && configured > 0 ? configured : DEFAULT_REQUEST_TIMEOUT_MS;
+}
+
 export class ApiError extends Error {
   status: number;
 
@@ -23,15 +32,33 @@ async function request<T>(path: string, init?: RequestInitWithBody): Promise<T> 
     throw new ApiError("VITE_API_BASE_URL is not configured.", 500);
   }
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    headers: {
-      "Content-Type": "application/json",
-      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      ...(requestInit.headers ?? {}),
-    },
-    ...requestInit,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), resolveRequestTimeoutMs());
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: {
+        ...(body !== undefined ? { "Content-Type": "application/json" } : {}),
+        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+        ...(requestInit.headers ?? {}),
+      },
+      ...requestInit,
+      signal: controller.signal,
+      body: body !== undefined ? JSON.stringify(body) : undefined,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw new ApiError("The backend request timed out. Try again in a moment.", 504);
+    }
+
+    throw new ApiError(
+      "Unable to reach the backend. Check that the API is live and cross-origin access is configured.",
+      0,
+    );
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
 
   if (!response.ok) {
     let detail = "Request failed.";
