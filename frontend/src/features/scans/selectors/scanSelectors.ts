@@ -8,6 +8,11 @@ import type {
 } from "../../../types/api";
 
 
+const HIGH_PROVIDER_LATENCY_MS = 750;
+const HIGH_PROVIDER_DURATION_MS = 4000;
+const LOW_CACHE_HIT_RATE = 0.35;
+
+
 function scanDiagnostics(scanResult: ScanResult) {
   return scanResult.diagnostics ?? {
     missing_tickers: [],
@@ -15,6 +20,63 @@ function scanDiagnostics(scanResult: ScanResult) {
     alerts_export_path: null,
     top_overall_identity: null,
   };
+}
+
+function numberOrNull(value: unknown) {
+  const numericValue = Number(value);
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function resolveFailedTickerCount(
+  providerErrors: Array<Record<string, unknown>>,
+  missingTickers: string[],
+  performance: Record<string, unknown>,
+  partialResult: boolean,
+) {
+  const failedTickerCount = numberOrNull(performance.failed_ticker_count);
+  if (failedTickerCount !== null && failedTickerCount >= 0) {
+    return failedTickerCount;
+  }
+
+  if (providerErrors.length > 0 || missingTickers.length > 0) {
+    return Math.max(providerErrors.length, missingTickers.length);
+  }
+
+  return partialResult ? 1 : 0;
+}
+
+function resolveCacheHitRate(diagnostics: ReturnType<typeof scanDiagnostics>) {
+  const performance = (diagnostics.performance ?? {}) as Record<string, unknown>;
+  const cache = (diagnostics.cache ?? {}) as Record<string, unknown>;
+  const marketDataCache = (cache.market_data ?? {}) as Record<string, unknown>;
+
+  return numberOrNull(performance.cache_hit_rate ?? cache.cache_hit_rate ?? marketDataCache.hit_rate);
+}
+
+function degradedRetrievalNotes(diagnostics: ReturnType<typeof scanDiagnostics>) {
+  const performance = (diagnostics.performance ?? {}) as Record<string, unknown>;
+  const notes: string[] = [];
+  const retryCount = numberOrNull(performance.retry_count) ?? 0;
+  const averageProviderLatencyMs = numberOrNull(performance.average_provider_latency_ms);
+  const providerDurationMs = numberOrNull(performance.provider_duration_ms);
+  const cacheHitRate = resolveCacheHitRate(diagnostics);
+
+  if (retryCount > 0) {
+    notes.push(`Data retrieved with retries (${retryCount}).`);
+  }
+
+  if (
+    (averageProviderLatencyMs !== null && averageProviderLatencyMs >= HIGH_PROVIDER_LATENCY_MS)
+    || (providerDurationMs !== null && providerDurationMs >= HIGH_PROVIDER_DURATION_MS)
+  ) {
+    notes.push("Provider response slower than usual.");
+  }
+
+  if (cacheHitRate !== null && cacheHitRate < LOW_CACHE_HIT_RATE) {
+    notes.push(`Cache reuse lower than usual (${(cacheHitRate * 100).toFixed(0)}% hit rate).`);
+  }
+
+  return notes;
 }
 
 
@@ -31,34 +93,43 @@ export function selectScanReliabilityNotice(scanResult?: ScanResult | null) {
   const providerDurationMs = Number(performance.provider_duration_ms ?? NaN);
   const retryCount = Number(performance.retry_count ?? 0);
   const retryExhausted = Boolean(performance.retry_exhausted);
+  const failedTickerCount = resolveFailedTickerCount(
+    providerErrors,
+    missingTickers,
+    performance as Record<string, unknown>,
+    Boolean(diagnostics.partial_result),
+  );
+  const degradedNotes = degradedRetrievalNotes(diagnostics);
   const providerDurationNote = Number.isFinite(providerDurationMs)
     ? `Provider phase completed in ${(providerDurationMs / 1000).toFixed(2)}s.`
     : null;
   const aggregateCacheHit = Boolean((cache as Record<string, unknown>).market_data && ((cache as Record<string, { hit?: boolean }>).market_data?.hit));
 
-  if (providerErrors.length > 0) {
+  if (providerErrors.length > 0 || missingTickers.length > 0 || diagnostics.partial_result) {
     return {
       tone: "warning" as const,
-      title: "Partial provider degradation",
-      message: "Some tickers failed during provider retrieval. Successful results remain usable, but coverage is incomplete.",
+      title: "Partial results available",
+      message: `${failedTickerCount} ticker(s) failed or were unavailable during the latest scan. Successful results remain visible, but coverage is incomplete.`,
       notes: [
+        failedTickerCount > 0 ? `Failed or unavailable tickers: ${failedTickerCount}` : null,
         `Provider errors: ${providerErrors.length}`,
+        missingTickers.length > 0 ? `Missing: ${missingTickers.join(", ")}` : null,
         retryCount > 0 ? `Retries attempted: ${retryCount}` : null,
         retryExhausted ? "Some provider requests exhausted their retry budget." : null,
         providerDurationNote,
         aggregateCacheHit ? "This response reused short-lived cached market data." : null,
+        ...degradedNotes,
       ].filter(Boolean) as string[],
     };
   }
 
-  if (missingTickers.length > 0 || diagnostics.partial_result) {
+  if (degradedNotes.length > 0) {
     return {
-      tone: "warning" as const,
-      title: "Partial coverage",
-      message: `${missingTickers.length} ticker(s) were unavailable during the latest scan, so empty boards may reflect degraded coverage rather than zero opportunities.`,
+      tone: "info" as const,
+      title: "Degraded retrieval signals",
+      message: "The latest scan completed, but data retrieval needed extra work. Review these signals before treating the run as fully healthy.",
       notes: [
-        missingTickers.length > 0 ? `Missing: ${missingTickers.join(", ")}` : null,
-        retryCount > 0 ? `Retries attempted: ${retryCount}` : null,
+        ...degradedNotes,
         providerDurationNote,
         aggregateCacheHit ? "This response reused short-lived cached market data." : null,
       ].filter(Boolean) as string[],
@@ -184,11 +255,38 @@ export function selectQualifiedTradesModel(scanResult: ScanResult) {
 
 export function selectAlertsModel(scanResult: ScanResult) {
   const diagnostics = scanDiagnostics(scanResult);
+  const performance = (diagnostics.performance ?? {}) as Record<string, unknown>;
+  const failedTickerCount = resolveFailedTickerCount(
+    diagnostics.provider_errors ?? [],
+    diagnostics.missing_tickers ?? [],
+    performance,
+    Boolean(diagnostics.partial_result),
+  );
+  const partialCoverage = Boolean(diagnostics.partial_result)
+    || (diagnostics.provider_errors ?? []).length > 0
+    || (diagnostics.missing_tickers ?? []).length > 0;
+
   return {
     total: scanResult.alerts.length,
     providerErrors: diagnostics.provider_errors ?? [],
     missingTickers: diagnostics.missing_tickers ?? [],
     partialResult: Boolean(diagnostics.partial_result),
+    failedTickerCount,
+    partialNotice: partialCoverage
+      ? {
+          title: "Partial results available",
+          message: `${failedTickerCount} ticker(s) failed or were unavailable during the latest scan, so the alert list may be incomplete.`,
+        }
+      : null,
+    emptyState: partialCoverage
+      ? {
+          title: "No alerts under partial coverage",
+          message: "Some tickers were unavailable during the scan, so review diagnostics before treating this as a fully clean market pass.",
+        }
+      : {
+          title: "No alerts",
+          message: "Nothing currently cleared the strongest alert thresholds. If you want a wider review set, broaden the ticker group or lower the score floor.",
+        },
     rows: scanResult.alerts.map((alert: AlertItem) => ({
       id: buildTemporaryTradeId(alert),
       trade: alert,

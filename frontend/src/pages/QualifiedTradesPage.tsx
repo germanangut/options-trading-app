@@ -9,6 +9,7 @@ import { QuickReviewPanel } from "../components/ui/QuickReviewPanel";
 import { SectionFrame } from "../components/ui/SectionFrame";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectQualifiedBoardModel } from "../features/scans/selectors/decisionExperienceSelectors";
+import { describeApiError } from "../lib/apiErrors";
 
 export function QualifiedTradesPage() {
   const latestScan = useLatestScan();
@@ -20,7 +21,7 @@ export function QualifiedTradesPage() {
   if (latestScan.isError) {
     return (
       <Banner tone="danger" title="Unable to load qualified trades">
-        {latestScan.error instanceof Error ? latestScan.error.message : "The latest scan could not be loaded."}
+        {describeApiError(latestScan.error, "load", "qualified trades").message}
       </Banner>
     );
   }

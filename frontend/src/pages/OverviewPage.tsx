@@ -8,6 +8,7 @@ import { SectionFrame } from "../components/ui/SectionFrame";
 import { Chip } from "../components/ui/Chip";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectOverviewCockpitModel } from "../features/scans/selectors/decisionExperienceSelectors";
+import { describeApiError } from "../lib/apiErrors";
 
 export function OverviewPage() {
   const latestScan = useLatestScan();
@@ -19,7 +20,7 @@ export function OverviewPage() {
   if (latestScan.isError) {
     return (
       <Banner tone="danger" title="Unable to load latest scan">
-        {latestScan.error instanceof Error ? latestScan.error.message : "The latest scan could not be loaded."}
+        {describeApiError(latestScan.error, "load", "the latest scan").message}
       </Banner>
     );
   }

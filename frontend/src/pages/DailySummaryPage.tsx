@@ -4,6 +4,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { MetricCard } from "../components/ui/MetricCard";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectDailySummaryModel, selectScanReliabilityNotice } from "../features/scans/selectors/scanSelectors";
+import { describeApiError } from "../lib/apiErrors";
 import { formatDuration, formatTradeLabel } from "../lib/formatters";
 
 export function DailySummaryPage() {
@@ -16,7 +17,7 @@ export function DailySummaryPage() {
   if (latestScan.isError) {
     return (
       <Banner tone="danger" title="Unable to load daily summary">
-        {latestScan.error instanceof Error ? latestScan.error.message : "The latest scan could not be loaded."}
+        {describeApiError(latestScan.error, "load", "the daily summary").message}
       </Banner>
     );
   }

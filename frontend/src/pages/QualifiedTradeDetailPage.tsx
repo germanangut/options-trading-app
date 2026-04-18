@@ -9,6 +9,7 @@ import { Chip } from "../components/ui/Chip";
 import { useScanById } from "../features/scans/hooks/useScanById";
 import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
 import { selectTradeDetailExperienceModel } from "../features/scans/selectors/decisionExperienceSelectors";
+import { describeApiError } from "../lib/apiErrors";
 
 export function QualifiedTradeDetailPage() {
   const { scanId, tradeId } = useParams();
@@ -20,13 +21,11 @@ export function QualifiedTradeDetailPage() {
   }
 
   if (scanQuery.isError || detailQuery.isError) {
+    const error = scanQuery.error ?? detailQuery.error;
+
     return (
       <Banner tone="danger" title="Unable to load trade detail">
-        {scanQuery.error instanceof Error
-          ? scanQuery.error.message
-          : detailQuery.error instanceof Error
-            ? detailQuery.error.message
-            : "The trade detail could not be loaded."}
+        {describeApiError(error, "load", "trade detail").message}
       </Banner>
     );
   }

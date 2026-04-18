@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { ScanResult } from "../../../types/api";
-import { selectScanPerformanceSummary } from "./scanSelectors";
+import {
+  selectAlertsModel,
+  selectScanPerformanceSummary,
+  selectScanReliabilityNotice,
+} from "./scanSelectors";
 
 
 function buildScanResult(): ScanResult {
@@ -74,5 +78,40 @@ describe("selectScanPerformanceSummary", () => {
     expect(summary?.notes).toContain("Average provider latency: 84.50ms.");
     expect(summary?.notes).toContain("Retry backoff added 120.00ms.");
     expect(summary?.notes).toContain("Cache reuse saved an estimated 240.00ms.");
+  });
+
+  it("surfaces degraded retrieval indicators from retry, latency, and cache diagnostics", () => {
+    const scanResult = buildScanResult();
+    scanResult.diagnostics.performance = {
+      ...scanResult.diagnostics.performance,
+      retry_count: 2,
+      average_provider_latency_ms: 980,
+      cache_hit_rate: 0.2,
+    };
+
+    const notice = selectScanReliabilityNotice(scanResult);
+
+    expect(notice).not.toBeNull();
+    expect(notice?.title).toBe("Degraded retrieval signals");
+    expect(notice?.notes).toContain("Data retrieved with retries (2).");
+    expect(notice?.notes).toContain("Provider response slower than usual.");
+    expect(notice?.notes).toContain("Cache reuse lower than usual (20% hit rate).");
+  });
+
+  it("builds partial-results messaging with failed ticker counts for alerts", () => {
+    const scanResult = buildScanResult();
+    scanResult.diagnostics.partial_result = true;
+    scanResult.diagnostics.missing_tickers = ["AAPL", "MSFT"];
+    scanResult.diagnostics.performance = {
+      ...scanResult.diagnostics.performance,
+      failed_ticker_count: 2,
+    };
+
+    const alerts = selectAlertsModel(scanResult);
+
+    expect(alerts.partialNotice).not.toBeNull();
+    expect(alerts.partialNotice?.title).toBe("Partial results available");
+    expect(alerts.partialNotice?.message).toContain("2 ticker(s) failed or were unavailable");
+    expect(alerts.emptyState.title).toBe("No alerts under partial coverage");
   });
 });

@@ -189,6 +189,15 @@ PU-14 improves runtime resilience and latency visibility without changing tradin
 - Additive response diagnostics now include non-breaking scan, provider, ticker, and cache metadata for frontend messaging and operational debugging
 - The frontend surfaces a minimal performance summary using the existing diagnostics contract rather than a separate metrics API
 
+### UX reliability states
+
+- The frontend keeps the existing layout and components, but now maps runtime diagnostics into clearer UX states while scans are running, partially complete, degraded, empty, or failed
+- The shared shell banner shows when a scan is in progress, keeps the last completed result visible, and can show elapsed time for the active run so the UI does not appear frozen
+- `diagnostics.partial_result`, `missing_tickers`, `provider_errors`, and `failed_ticker_count` now map to a shared `Partial results available` state so empty boards do not get misread as clean market conditions
+- Retry-aware and performance-aware degraded indicators are inferred from existing diagnostics such as `retry_count`, `average_provider_latency_ms`, `provider_duration_ms`, and `cache_hit_rate`
+- Healthy empty states now explain that no qualified trades or alerts were returned under the current thresholds and suggest broadening the ticker group or relaxing the score floor when appropriate
+- Frontend error messaging distinguishes between authentication failures, provider-side failures, and general platform failures using the existing HTTP status and error detail surface without changing backend contracts
+
 ### Performance metrics reference
 
 - Scan-level diagnostics under `diagnostics.performance` include `scan_duration_ms`, `ticker_count`, `processed_ticker_count`, `successful_ticker_count`, `failed_ticker_count`, `provider_duration_ms`, `processing_duration_ms`, and `history_duration_ms`

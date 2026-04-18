@@ -16,6 +16,7 @@ import {
   STRATEGY_OPTIONS,
   TICKER_GROUP_OPTIONS,
 } from "../../lib/constants";
+import { describeApiError } from "../../lib/apiErrors";
 import { formatDuration } from "../../lib/formatters";
 
 function linkClassName(isActive: boolean) {
@@ -229,7 +230,7 @@ export function Sidebar() {
 
             {runScan.isError ? (
               <Banner tone="danger" title="Scan failed">
-                {runScan.error instanceof Error ? runScan.error.message : "Unable to run scan."}
+                {describeApiError(runScan.error, "run", "the scan").message}
               </Banner>
             ) : null}
           </div>

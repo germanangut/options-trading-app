@@ -4,6 +4,7 @@ import { Chip } from "../components/ui/Chip";
 import { EmptyState } from "../components/ui/EmptyState";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectAlertsModel } from "../features/scans/selectors/scanSelectors";
+import { describeApiError } from "../lib/apiErrors";
 import { formatNumber, formatTradeLabel } from "../lib/formatters";
 
 export function AlertsPage() {
@@ -16,7 +17,7 @@ export function AlertsPage() {
   if (latestScan.isError) {
     return (
       <Banner tone="danger" title="Unable to load alerts">
-        {latestScan.error instanceof Error ? latestScan.error.message : "The latest scan could not be loaded."}
+        {describeApiError(latestScan.error, "load", "alerts").message}
       </Banner>
     );
   }
@@ -29,23 +30,17 @@ export function AlertsPage() {
 
   return (
     <div className="grid gap-4">
-      {alerts.providerErrors.length > 0 ? (
-        <Banner tone="warning" title="Provider issues detected">
-          The latest scan reported provider errors, so the alert list may be incomplete.
-        </Banner>
-      ) : alerts.partialResult || alerts.missingTickers.length > 0 ? (
-        <Banner tone="warning" title="Partial alert coverage">
-          Some tickers were unavailable during the latest scan, so an empty alert board may reflect incomplete coverage rather than a clean market.
+      {alerts.partialNotice ? (
+        <Banner tone="warning" title={alerts.partialNotice.title}>
+          {alerts.partialNotice.message}
         </Banner>
       ) : null}
 
       <Card title="Alerts" subtitle={`${alerts.total} alert(s) currently surfaced by the backend.`}>
         {alerts.rows.length === 0 ? (
           <EmptyState
-            title={alerts.partialResult || alerts.missingTickers.length > 0 ? "No alerts under partial coverage" : "No alerts"}
-            message={alerts.partialResult || alerts.missingTickers.length > 0
-              ? "The latest scan kept partial results, but some tickers were unavailable. Review diagnostics before treating this as a fully clean pass."
-              : "Nothing currently cleared the strongest alert thresholds."}
+            title={alerts.emptyState.title}
+            message={alerts.emptyState.message}
           />
         ) : (
           <div className="grid gap-3">

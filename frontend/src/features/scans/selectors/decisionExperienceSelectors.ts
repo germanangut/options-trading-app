@@ -289,17 +289,17 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
     caveats,
     emptyState: (diagnostics.provider_errors ?? []).length > 0
       ? {
-          title: "No qualified trades under degraded coverage",
-          message: "The latest scan kept running despite provider failures. Review alerts and diagnostics before concluding there were no qualified setups.",
+          title: "Partial results available",
+          message: "Provider failures affected this run. Review alerts and diagnostics before concluding there were no qualified setups.",
         }
       : (diagnostics.missing_tickers ?? []).length > 0 || diagnostics.partial_result
         ? {
-            title: "No qualified trades under partial coverage",
+            title: "Partial results available",
             message: "Some tickers were unavailable during the scan, so this empty board may reflect incomplete market coverage.",
           }
         : {
             title: "No qualified trades",
-            message: "The latest scan did not produce any qualified opportunities.",
+            message: "The latest scan did not produce any qualified opportunities. If you want a wider review set, broaden the ticker group or relax the score threshold.",
           },
     items: scanResult.qualified_trades.map((trade, index) => ({
       id: trade.trade_id ?? `${scanResult.scan_metadata.scan_id}-${index}`,

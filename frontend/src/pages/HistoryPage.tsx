@@ -4,6 +4,7 @@ import { EmptyState } from "../components/ui/EmptyState";
 import { MetricCard } from "../components/ui/MetricCard";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectHistoryModel, selectScanReliabilityNotice } from "../features/scans/selectors/scanSelectors";
+import { describeApiError } from "../lib/apiErrors";
 
 export function HistoryPage() {
   const latestScan = useLatestScan();
@@ -15,7 +16,7 @@ export function HistoryPage() {
   if (latestScan.isError) {
     return (
       <Banner tone="danger" title="Unable to load history">
-        {latestScan.error instanceof Error ? latestScan.error.message : "The latest scan could not be loaded."}
+        {describeApiError(latestScan.error, "load", "history").message}
       </Banner>
     );
   }

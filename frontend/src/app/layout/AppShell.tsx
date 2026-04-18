@@ -3,10 +3,12 @@ import { Outlet, useLocation } from "react-router-dom";
 import { Banner } from "../../components/ui/Banner";
 import { useLatestScan } from "../../features/scans/hooks/useLatestScan";
 import { useScanActivity } from "../../features/scans/hooks/useScanActivity";
+import { useElapsedTimer } from "../../features/scans/hooks/useElapsedTimer";
 import {
   selectScanPerformanceSummary,
   selectScanReliabilityNotice,
 } from "../../features/scans/selectors/scanSelectors";
+import { formatDuration } from "../../lib/formatters";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
@@ -14,6 +16,7 @@ export function AppShell() {
   const location = useLocation();
   const latestScan = useLatestScan();
   const scanActivity = useScanActivity();
+  const elapsedScanRunMs = useElapsedTimer(scanActivity.latestSubmittedAt, scanActivity.isRunning);
   const reliabilityNotice = selectScanReliabilityNotice(latestScan.data);
   const performanceSummary = selectScanPerformanceSummary(latestScan.data);
 
@@ -27,9 +30,21 @@ export function AppShell() {
             <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
               {scanActivity.isRunning ? (
                 <Banner tone="info" title="Scan running">
-                  {latestScan.data
-                    ? "A new scan is in progress. The current views stay on the last successful result until the backend returns the next payload."
-                    : "The first scan is running. Results will populate automatically when the backend returns."}
+                  <div className="space-y-1">
+                    <p>
+                      {latestScan.data
+                        ? "A new scan is in progress. The current views stay on the last successful result until the backend returns the next payload."
+                        : "The first scan is running. Results will populate automatically when the backend returns."}
+                    </p>
+                    {elapsedScanRunMs > 0 ? (
+                      <p>Elapsed time: {formatDuration(elapsedScanRunMs / 1000)}</p>
+                    ) : null}
+                    {scanActivity.latestRequest ? (
+                      <p>
+                        Running {scanActivity.latestRequest.profile} on {scanActivity.latestRequest.ticker_group} with {scanActivity.latestRequest.selected_strategy_keys.length} strategy{scanActivity.latestRequest.selected_strategy_keys.length === 1 ? "" : "ies"}.
+                      </p>
+                    ) : null}
+                  </div>
                 </Banner>
               ) : null}
               {reliabilityNotice ? (

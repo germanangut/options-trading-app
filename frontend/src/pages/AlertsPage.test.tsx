@@ -1,9 +1,8 @@
 import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ScanResult } from "../types/api";
-import { QualifiedTradesPage } from "./QualifiedTradesPage";
+import { AlertsPage } from "./AlertsPage";
 
 
 vi.mock("../features/scans/hooks/useLatestScan", () => ({
@@ -14,23 +13,23 @@ vi.mock("../features/scans/hooks/useLatestScan", () => ({
 const { useLatestScan } = await import("../features/scans/hooks/useLatestScan");
 
 
-function buildPartialScan(): ScanResult {
+function buildScan(): ScanResult {
   return {
     scan_metadata: {
-      scan_id: "scan_partial",
+      scan_id: "scan_alerts",
       generated_at: "2026-04-17T00:00:00Z",
       profile: "balanced",
       ticker_group: "tech",
-      selected_strategy_keys: ["bull_put_spread", "bear_call_spread"],
+      selected_strategy_keys: ["bull_put_spread"],
       dte_range: { dte_min: 20, dte_max: 35 },
       scoring_weights: { pop_weight: 0.6, ror_weight: 0.4 },
       alert_thresholds: { min_score: 65, min_consistency: 3 },
-      execution_time_seconds: 1.25,
-      provider: "alpaca-contracts-plus-symbol-snapshots",
+      execution_time_seconds: 1.2,
+      provider: "alpaca",
       request: {
         profile: "balanced",
         ticker_group: "tech",
-        selected_strategy_keys: ["bull_put_spread", "bear_call_spread"],
+        selected_strategy_keys: ["bull_put_spread"],
         dte_min: 20,
         dte_max: 35,
         min_score: 65,
@@ -56,46 +55,24 @@ function buildPartialScan(): ScanResult {
     history_context: {},
     daily_summary: {},
     diagnostics: {
-      missing_tickers: ["NVDA"],
+      missing_tickers: [],
       provider_errors: [],
       alerts_export_path: null,
       top_overall_identity: null,
-      partial_result: true,
-      performance: { provider_duration_ms: 820 },
+      partial_result: false,
+      performance: {},
       cache: {},
     },
   };
 }
 
 
-describe("QualifiedTradesPage", () => {
-  it("explains that an empty board may reflect partial coverage", () => {
-    vi.mocked(useLatestScan).mockReturnValue({
-      isLoading: false,
-      isError: false,
-      data: buildPartialScan(),
-    } as ReturnType<typeof useLatestScan>);
-
-    render(
-      <MemoryRouter>
-        <QualifiedTradesPage />
-      </MemoryRouter>,
-    );
-
-    expect(screen.getByText("Partial results available")).toBeInTheDocument();
-    expect(
-      screen.getByText("Some tickers were unavailable during the scan, so this empty board may reflect incomplete market coverage."),
-    ).toBeInTheDocument();
-  });
-
-  it("suggests widening parameters when no qualified trades are returned from a healthy run", () => {
-    const scan = buildPartialScan();
-    scan.diagnostics = {
-      ...scan.diagnostics,
-      missing_tickers: [],
-      partial_result: false,
-      performance: { provider_duration_ms: 400 },
-    };
+describe("AlertsPage", () => {
+  it("shows partial results messaging when some tickers fail", () => {
+    const scan = buildScan();
+    scan.diagnostics.partial_result = true;
+    scan.diagnostics.missing_tickers = ["AAPL", "NVDA"];
+    scan.diagnostics.performance = { failed_ticker_count: 2 };
 
     vi.mocked(useLatestScan).mockReturnValue({
       isLoading: false,
@@ -103,15 +80,26 @@ describe("QualifiedTradesPage", () => {
       data: scan,
     } as ReturnType<typeof useLatestScan>);
 
-    render(
-      <MemoryRouter>
-        <QualifiedTradesPage />
-      </MemoryRouter>,
-    );
+    render(<AlertsPage />);
 
-    expect(screen.getByText("No qualified trades")).toBeInTheDocument();
+    expect(screen.getByText("Partial results available")).toBeInTheDocument();
     expect(
-      screen.getByText("The latest scan did not produce any qualified opportunities. If you want a wider review set, broaden the ticker group or relax the score threshold."),
+      screen.getByText("2 ticker(s) failed or were unavailable during the latest scan, so the alert list may be incomplete."),
+    ).toBeInTheDocument();
+  });
+
+  it("suggests widening parameters when a healthy run has no alerts", () => {
+    vi.mocked(useLatestScan).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildScan(),
+    } as ReturnType<typeof useLatestScan>);
+
+    render(<AlertsPage />);
+
+    expect(screen.getByText("No alerts")).toBeInTheDocument();
+    expect(
+      screen.getByText("Nothing currently cleared the strongest alert thresholds. If you want a wider review set, broaden the ticker group or lower the score floor."),
     ).toBeInTheDocument();
   });
 });
