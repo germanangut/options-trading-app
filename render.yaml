@@ -24,6 +24,10 @@ services:
         value: 168
       - key: MARKET_DATA_CACHE_TTL_SECONDS
         value: 60
+      - key: PROVIDER_MEMORY_CACHE_ENABLED
+        value: "true"
+      - key: PROVIDER_MEMORY_CACHE_MAX_ENTRIES
+        value: 512
       - key: PROVIDER_TIMEOUT_SECONDS
         value: 12
       - key: PROVIDER_TOTAL_TIMEOUT_SECONDS
@@ -36,6 +40,8 @@ services:
         value: exponential
       - key: PROVIDER_RETRY_MAX_BACKOFF_SECONDS
         value: 1.5
+      - key: PROVIDER_TICKER_DATA_CACHE_TTL_SECONDS
+        value: 20
       - key: PROVIDER_CONTRACTS_CACHE_TTL_SECONDS
         value: 120
       - key: PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS

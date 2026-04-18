@@ -86,6 +86,7 @@ def test_run_scan_engine_keeps_successful_tickers_when_one_provider_result_fails
 def test_discover_contracts_retries_after_timeout(monkeypatch):
     workspace_tmp_dir = _workspace_tmp_dir()
     call_count = {"value": 0}
+    data_provider._clear_in_memory_cache()
 
     def fake_get(*args, **kwargs):
         call_count["value"] += 1
@@ -116,12 +117,14 @@ def test_discover_contracts_retries_after_timeout(monkeypatch):
         assert result["request_metadata"]["retry_exhausted"] is False
         assert result["request_metadata"]["cache_hit"] is False
     finally:
+        data_provider._clear_in_memory_cache()
         shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
 
 
 def test_discover_contracts_reports_retry_exhaustion(monkeypatch):
     workspace_tmp_dir = _workspace_tmp_dir()
     call_count = {"value": 0}
+    data_provider._clear_in_memory_cache()
 
     def fake_get(*args, **kwargs):
         call_count["value"] += 1
@@ -141,12 +144,14 @@ def test_discover_contracts_reports_retry_exhaustion(monkeypatch):
         assert exc_info.value.retry_exhausted is True
         assert exc_info.value.category == "timeout"
     finally:
+        data_provider._clear_in_memory_cache()
         shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
 
 
 def test_discover_contracts_does_not_retry_auth_failure(monkeypatch):
     workspace_tmp_dir = _workspace_tmp_dir()
     call_count = {"value": 0}
+    data_provider._clear_in_memory_cache()
 
     def fake_get(*args, **kwargs):
         call_count["value"] += 1
@@ -165,6 +170,7 @@ def test_discover_contracts_does_not_retry_auth_failure(monkeypatch):
         assert exc_info.value.retry_exhausted is False
         assert exc_info.value.category == "auth"
     finally:
+        data_provider._clear_in_memory_cache()
         shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
 
 
@@ -186,7 +192,9 @@ def test_fetch_underlying_trade_uses_cache_on_repeat_call(monkeypatch):
         )
 
     monkeypatch.setenv("CACHE_DIR", str(workspace_tmp_dir / "cache"))
+    monkeypatch.setenv("PROVIDER_MEMORY_CACHE_ENABLED", "true")
     monkeypatch.setenv("PROVIDER_UNDERLYING_CACHE_TTL_SECONDS", "60")
+    data_provider._clear_in_memory_cache()
     monkeypatch.setattr(data_provider.requests, "get", fake_get)
 
     try:
@@ -197,6 +205,158 @@ def test_fetch_underlying_trade_uses_cache_on_repeat_call(monkeypatch):
         assert first["trade"]["p"] == 502.13
         assert second["trade"]["p"] == 502.13
         assert first["request_metadata"]["cache_hit"] is False
+        assert first["request_metadata"]["cache_miss"] is True
         assert second["request_metadata"]["cache_hit"] is True
+        assert second["request_metadata"]["cache_layer"] == "memory"
     finally:
+        data_provider._clear_in_memory_cache()
         shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
+
+
+def test_fetch_underlying_trade_cache_expires(monkeypatch):
+    workspace_tmp_dir = _workspace_tmp_dir()
+    call_count = {"value": 0}
+    current_time = {"value": 1000.0}
+
+    def fake_get(*args, **kwargs):
+        call_count["value"] += 1
+        return _FakeResponse(
+            200,
+            {
+                "trades": {
+                    "SPY": {
+                        "p": 499.25,
+                    }
+                }
+            },
+        )
+
+    monkeypatch.setenv("CACHE_DIR", str(workspace_tmp_dir / "cache"))
+    monkeypatch.setenv("PROVIDER_MEMORY_CACHE_ENABLED", "true")
+    monkeypatch.setenv("PROVIDER_UNDERLYING_CACHE_TTL_SECONDS", "1")
+    monkeypatch.setattr(data_provider.time, "time", lambda: current_time["value"])
+    monkeypatch.setattr(data_provider.requests, "get", fake_get)
+    data_provider._clear_in_memory_cache()
+
+    try:
+        first = fetch_underlying_stock_trade("SPY")
+        current_time["value"] = 1002.0
+        second = fetch_underlying_stock_trade("SPY")
+
+        assert call_count["value"] == 2
+        assert first["request_metadata"]["cache_hit"] is False
+        assert second["request_metadata"]["cache_hit"] is False
+        assert second["request_metadata"]["cache_miss"] is True
+    finally:
+        data_provider._clear_in_memory_cache()
+        shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
+
+
+def test_fetch_underlying_trade_bypasses_cache_for_invalid_inputs(monkeypatch):
+    workspace_tmp_dir = _workspace_tmp_dir()
+    call_count = {"value": 0}
+
+    def fake_get(*args, **kwargs):
+        call_count["value"] += 1
+        return _FakeResponse(
+            200,
+            {
+                "trades": {
+                    "": {
+                        "p": 100.0,
+                    }
+                }
+            },
+        )
+
+    monkeypatch.setenv("CACHE_DIR", str(workspace_tmp_dir / "cache"))
+    monkeypatch.setenv("PROVIDER_MEMORY_CACHE_ENABLED", "true")
+    monkeypatch.setenv("PROVIDER_UNDERLYING_CACHE_TTL_SECONDS", "60")
+    monkeypatch.setattr(data_provider.requests, "get", fake_get)
+    data_provider._clear_in_memory_cache()
+
+    try:
+        first = fetch_underlying_stock_trade("")
+        second = fetch_underlying_stock_trade("")
+
+        assert call_count["value"] == 2
+        assert first["request_metadata"]["cache_hit"] is False
+        assert second["request_metadata"]["cache_hit"] is False
+        assert first["request_metadata"]["cache_key"] is None
+        assert second["request_metadata"]["cache_key"] is None
+    finally:
+        data_provider._clear_in_memory_cache()
+        shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
+
+
+def test_get_alpaca_market_data_reuses_ticker_provider_cache(monkeypatch):
+    data_provider._clear_in_memory_cache()
+    call_counts = {
+        "discover": 0,
+        "snapshots": 0,
+        "underlying": 0,
+        "normalize": 0,
+    }
+
+    monkeypatch.setenv("PROVIDER_MEMORY_CACHE_ENABLED", "true")
+    monkeypatch.setenv("PROVIDER_TICKER_DATA_CACHE_TTL_SECONDS", "60")
+
+    def fake_discover(*args, **kwargs):
+        call_counts["discover"] += 1
+        return {
+            "contracts": [{"symbol": "SPY250117P00450000"}],
+            "chosen_expiration": "2030-01-17",
+            "chosen_dte": 30,
+            "request_metadata": {"cache_hit": False, "retry_count": 0, "retry_exhausted": False},
+        }
+
+    def fake_snapshots(*args, **kwargs):
+        call_counts["snapshots"] += 1
+        return {
+            "snapshots": {"SPY250117P00450000": {}},
+            "request_metadata": {
+                "cache_hits": 0,
+                "cache_misses": 1,
+                "retry_count": 0,
+                "retry_exhausted_count": 0,
+                "estimated_saved_duration_ms": 0.0,
+            },
+        }
+
+    def fake_underlying(*args, **kwargs):
+        call_counts["underlying"] += 1
+        return {
+            "trade": {"p": 501.0},
+            "request_metadata": {
+                "cache_hit": False,
+                "retry_count": 0,
+                "retry_exhausted": False,
+                "estimated_saved_duration_ms": 0.0,
+            },
+        }
+
+    def fake_normalize(*args, **kwargs):
+        call_counts["normalize"] += 1
+        return {
+            "underlying_price": 501.0,
+            "expiration_date": "2030-01-17",
+            "DTE": 30,
+            "contracts": [{"symbol": "SPY250117P00450000", "delta": -0.3, "bid": 1.0, "ask": 1.1, "strike": 450.0, "type": "put"}],
+            "provider_diagnostics": {"ticker": "SPY", "degraded": False},
+        }
+
+    monkeypatch.setattr(data_provider, "discover_option_contracts_for_window", fake_discover)
+    monkeypatch.setattr(data_provider, "fetch_option_snapshots_for_symbols", fake_snapshots)
+    monkeypatch.setattr(data_provider, "fetch_underlying_stock_trade", fake_underlying)
+    monkeypatch.setattr(data_provider, "normalize_discovered_contracts", fake_normalize)
+
+    try:
+        first = data_provider.get_alpaca_market_data(["SPY"], dte_min=20, dte_max=35)
+        second = data_provider.get_alpaca_market_data(["SPY"], dte_min=20, dte_max=35)
+
+        assert call_counts == {"discover": 1, "snapshots": 1, "underlying": 1, "normalize": 1}
+        assert first["cache"]["ticker_data"]["misses"] == 1
+        assert second["cache"]["ticker_data"]["hits"] == 1
+        assert second["performance"]["provider_call_reduction_count"] >= 1
+    finally:
+        data_provider._clear_in_memory_cache()

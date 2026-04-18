@@ -120,12 +120,15 @@ CACHE_DIR=.cache
 SCAN_DATABASE_PATH=.history/scan_store.sqlite
 AUTH_SESSION_TTL_HOURS=168
 MARKET_DATA_CACHE_TTL_SECONDS=60
+PROVIDER_MEMORY_CACHE_ENABLED=true
+PROVIDER_MEMORY_CACHE_MAX_ENTRIES=512
 PROVIDER_TIMEOUT_SECONDS=12
 PROVIDER_TOTAL_TIMEOUT_SECONDS=20
 PROVIDER_RETRY_COUNT=2
 PROVIDER_RETRY_BACKOFF_SECONDS=0.35
 PROVIDER_RETRY_STRATEGY=exponential
 PROVIDER_RETRY_MAX_BACKOFF_SECONDS=1.5
+PROVIDER_TICKER_DATA_CACHE_TTL_SECONDS=20
 PROVIDER_CONTRACTS_CACHE_TTL_SECONDS=120
 PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS=45
 PROVIDER_UNDERLYING_CACHE_TTL_SECONDS=15
@@ -149,11 +152,15 @@ PU-14 improves runtime resilience and latency visibility without changing tradin
 ### Cache policy
 
 - Aggregated market-data responses use a short-lived cache controlled by `MARKET_DATA_CACHE_TTL_SECONDS`
+- An optional in-memory cache layer can be enabled with `PROVIDER_MEMORY_CACHE_ENABLED`; it is process-local, TTL-bound, and capped by `PROVIDER_MEMORY_CACHE_MAX_ENTRIES`
+- Healthy per-ticker normalized provider results use a short-lived in-memory cache controlled by `PROVIDER_TICKER_DATA_CACHE_TTL_SECONDS` to reduce repeated full ticker fetch pipelines during bursty scan usage
 - Provider sub-reads are cached independently with explicit TTLs:
 	- contracts: `PROVIDER_CONTRACTS_CACHE_TTL_SECONDS`
 	- option snapshots: `PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS`
 	- underlying trades: `PROVIDER_UNDERLYING_CACHE_TTL_SECONDS`
+- Cache reads are explicit and observable through cache hit or miss metadata, cache layer, cache age, cache key hashes, and estimated saved duration where available
 - Degraded provider responses are not persisted into the aggregated market-data cache, which avoids re-serving known provider failures as if they were healthy reads
+- Degraded or incomplete per-ticker provider results are not written into the in-memory ticker cache, which avoids corrupting later scans with partial provider state
 - Cache behavior is surfaced in structured diagnostics and logs as hit/miss metadata
 
 ### Graceful degradation behavior
@@ -176,6 +183,7 @@ PU-14 improves runtime resilience and latency visibility without changing tradin
 ### Known limitations deferred beyond PU-14
 
 - no distributed or shared cache layer across backend instances
+- in-memory cache is single-instance and process-local, so it does not share warm state across replicas or restarts
 - no circuit breaker or provider failover beyond bounded retries and graceful degradation
 - no background scan queue, concurrency shaping, or job orchestration for large burst traffic
 - no dedicated metrics backend or tracing export; visibility remains log-first

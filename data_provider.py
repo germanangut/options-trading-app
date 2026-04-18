@@ -1,7 +1,9 @@
 import os
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 import logging
 import sys
+import threading
 import time
 import json
 import hashlib
@@ -17,6 +19,8 @@ from settings import get_settings
 
 DEBUG_MODE = "--debug" in sys.argv
 logger = get_logger(__name__)
+_IN_MEMORY_CACHE = {}
+_IN_MEMORY_CACHE_LOCK = threading.Lock()
 
 
 
@@ -60,6 +64,9 @@ class ProviderRequestError(RuntimeError):
 
 def _provider_runtime_settings() -> dict[str, float | int]:
     settings = get_settings()
+    memory_cache_enabled = _safe_bool(
+        settings.get("provider_memory_cache_enabled", True)
+    )
     retry_strategy = str(settings.get("provider_retry_strategy", "exponential")).strip().lower()
     if retry_strategy not in {"fixed", "exponential"}:
         retry_strategy = "exponential"
@@ -76,6 +83,11 @@ def _provider_runtime_settings() -> dict[str, float | int]:
         "market_data_cache_ttl_seconds": int(
             settings.get("market_data_cache_ttl_seconds", 60)
         ),
+        "provider_memory_cache_enabled": True if memory_cache_enabled is None else memory_cache_enabled,
+        "provider_memory_cache_max_entries": max(
+            1,
+            int(settings.get("provider_memory_cache_max_entries", 512)),
+        ),
         "provider_timeout_seconds": max(1.0, per_attempt_timeout),
         "provider_total_timeout_seconds": max(1.0, total_timeout),
         "provider_retry_count": int(settings.get("provider_retry_count", 2)),
@@ -86,6 +98,9 @@ def _provider_runtime_settings() -> dict[str, float | int]:
         "provider_retry_max_backoff_seconds": max(
             0.0,
             float(settings.get("provider_retry_max_backoff_seconds", 1.5)),
+        ),
+        "provider_ticker_data_cache_ttl_seconds": int(
+            settings.get("provider_ticker_data_cache_ttl_seconds", 20)
         ),
         "provider_contracts_cache_ttl_seconds": int(
             settings.get("provider_contracts_cache_ttl_seconds", 120)
@@ -119,9 +134,141 @@ def _safe_int(value):
         return None
 
 
+def _safe_bool(value):
+    if isinstance(value, bool):
+        return value
+
+    if value in (None, ""):
+        return None
+
+    text = str(value).strip().lower()
+    if text in {"1", "true", "yes", "on"}:
+        return True
+    if text in {"0", "false", "no", "off"}:
+        return False
+
+    return None
+
+
 def _build_cache_key(namespace, payload):
     raw_key = json.dumps({"namespace": namespace, **payload}, sort_keys=True)
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
+
+
+def _is_cacheable_payload(value):
+    if value in (None, ""):
+        return False
+
+    if isinstance(value, dict):
+        return bool(value) and all(_is_cacheable_payload(item) for item in value.values())
+
+    if isinstance(value, (list, tuple, set)):
+        return bool(value) and all(_is_cacheable_payload(item) for item in value)
+
+    return True
+
+
+def _build_cache_metadata(*, cache_key, layer, age_seconds, source_duration_ms, lookup_duration_ms):
+    estimated_saved_duration_ms = None
+    if source_duration_ms is not None:
+        estimated_saved_duration_ms = round(
+            max(0.0, float(source_duration_ms) - float(lookup_duration_ms)),
+            2,
+        )
+
+    return {
+        "cache_hit": True,
+        "cache_miss": False,
+        "cache_layer": layer,
+        "cache_key": cache_key,
+        "cache_age_seconds": round(float(age_seconds), 3),
+        "cache_lookup_duration_ms": round(float(lookup_duration_ms), 2),
+        "source_duration_ms": source_duration_ms,
+        "estimated_saved_duration_ms": estimated_saved_duration_ms,
+    }
+
+
+def _clear_in_memory_cache():
+    with _IN_MEMORY_CACHE_LOCK:
+        _IN_MEMORY_CACHE.clear()
+
+
+def _prune_in_memory_cache(now, max_entries):
+    stale_entries = []
+    active_entries = []
+
+    for namespace, entries in list(_IN_MEMORY_CACHE.items()):
+        for cache_key, entry in list(entries.items()):
+            if entry.get("expires_at", 0) <= now:
+                stale_entries.append((namespace, cache_key))
+            else:
+                active_entries.append((entry.get("timestamp", 0), namespace, cache_key))
+
+    for namespace, cache_key in stale_entries:
+        namespace_entries = _IN_MEMORY_CACHE.get(namespace, {})
+        namespace_entries.pop(cache_key, None)
+        if not namespace_entries and namespace in _IN_MEMORY_CACHE:
+            _IN_MEMORY_CACHE.pop(namespace, None)
+
+    active_entry_count = sum(len(entries) for entries in _IN_MEMORY_CACHE.values())
+    if active_entry_count <= max_entries:
+        return
+
+    active_entries.sort(key=lambda item: item[0])
+    for _, namespace, cache_key in active_entries[: active_entry_count - max_entries]:
+        namespace_entries = _IN_MEMORY_CACHE.get(namespace, {})
+        namespace_entries.pop(cache_key, None)
+        if not namespace_entries and namespace in _IN_MEMORY_CACHE:
+            _IN_MEMORY_CACHE.pop(namespace, None)
+
+
+def _read_in_memory_cache(namespace, cache_key, ttl_seconds):
+    runtime = _provider_runtime_settings()
+    if not runtime["provider_memory_cache_enabled"] or ttl_seconds <= 0:
+        return None
+
+    lookup_started_at = time.perf_counter()
+    now = time.time()
+
+    with _IN_MEMORY_CACHE_LOCK:
+        namespace_entries = _IN_MEMORY_CACHE.get(namespace, {})
+        entry = namespace_entries.get(cache_key)
+        if entry is None:
+            return None
+
+        if entry.get("expires_at", 0) <= now:
+            namespace_entries.pop(cache_key, None)
+            if not namespace_entries and namespace in _IN_MEMORY_CACHE:
+                _IN_MEMORY_CACHE.pop(namespace, None)
+            return None
+
+        return {
+            "value": deepcopy(entry.get("value")),
+            **_build_cache_metadata(
+                cache_key=cache_key,
+                layer="memory",
+                age_seconds=now - entry.get("timestamp", now),
+                source_duration_ms=entry.get("source_duration_ms"),
+                lookup_duration_ms=(time.perf_counter() - lookup_started_at) * 1000,
+            ),
+        }
+
+
+def _write_in_memory_cache(namespace, cache_key, value, ttl_seconds, source_duration_ms=None):
+    runtime = _provider_runtime_settings()
+    if not runtime["provider_memory_cache_enabled"] or ttl_seconds <= 0:
+        return
+
+    now = time.time()
+    with _IN_MEMORY_CACHE_LOCK:
+        namespace_entries = _IN_MEMORY_CACHE.setdefault(namespace, {})
+        namespace_entries[cache_key] = {
+            "value": deepcopy(value),
+            "timestamp": now,
+            "expires_at": now + ttl_seconds,
+            "source_duration_ms": source_duration_ms,
+        }
+        _prune_in_memory_cache(now, int(runtime["provider_memory_cache_max_entries"]))
 
 
 def _get_namespaced_cache_file_path(namespace, cache_key):
@@ -129,9 +276,18 @@ def _get_namespaced_cache_file_path(namespace, cache_key):
 
 
 def _read_cached_json(namespace, cache_key, ttl_seconds):
+    entry = _read_cached_json_entry(namespace, cache_key, ttl_seconds)
+    if entry is None:
+        return None
+
+    return entry.get("value")
+
+
+def _read_cached_json_entry(namespace, cache_key, ttl_seconds):
     if ttl_seconds <= 0:
         return None
 
+    lookup_started_at = time.perf_counter()
     cache_file = _get_namespaced_cache_file_path(namespace, cache_key)
     if not cache_file.exists():
         return None
@@ -155,14 +311,26 @@ def _read_cached_json(namespace, cache_key, ttl_seconds):
             pass
         return None
 
-    return value
+    metadata = entry.get("metadata") if isinstance(entry.get("metadata"), dict) else {}
+
+    return {
+        "value": value,
+        **_build_cache_metadata(
+            cache_key=cache_key,
+            layer="file",
+            age_seconds=age,
+            source_duration_ms=metadata.get("source_duration_ms"),
+            lookup_duration_ms=(time.perf_counter() - lookup_started_at) * 1000,
+        ),
+    }
 
 
-def _write_cached_json(namespace, cache_key, value):
+def _write_cached_json(namespace, cache_key, value, metadata=None):
     cache_file = _get_namespaced_cache_file_path(namespace, cache_key)
     entry = {
         "timestamp": time.time(),
         "value": value,
+        "metadata": metadata or {},
     }
 
     try:
@@ -170,6 +338,43 @@ def _write_cached_json(namespace, cache_key, value):
             json.dump(entry, file_handle)
     except OSError:
         pass
+
+
+def _read_cache_layers(namespace, cache_key, ttl_seconds):
+    runtime = _provider_runtime_settings()
+    if runtime["provider_memory_cache_enabled"]:
+        memory_entry = _read_in_memory_cache(namespace, cache_key, ttl_seconds)
+        if memory_entry is not None:
+            return memory_entry
+
+    file_entry = _read_cached_json_entry(namespace, cache_key, ttl_seconds)
+    if file_entry is not None:
+        _write_in_memory_cache(
+            namespace,
+            cache_key,
+            file_entry["value"],
+            ttl_seconds,
+            source_duration_ms=file_entry.get("source_duration_ms"),
+        )
+        return file_entry
+
+    return None
+
+
+def _write_cache_layers(namespace, cache_key, value, ttl_seconds, source_duration_ms=None):
+    _write_cached_json(
+        namespace,
+        cache_key,
+        value,
+        metadata={"source_duration_ms": source_duration_ms},
+    )
+    _write_in_memory_cache(
+        namespace,
+        cache_key,
+        value,
+        ttl_seconds,
+        source_duration_ms=source_duration_ms,
+    )
 
 
 def _backoff_seconds(attempt_index, base_delay, strategy, max_backoff_seconds):
@@ -202,31 +407,66 @@ def _request_provider_json(
     retry_strategy = str(runtime["provider_retry_strategy"])
     max_backoff_seconds = float(runtime["provider_retry_max_backoff_seconds"])
     cache_key = None
+    cache_lookup_metadata = None
     total_started_at = time.perf_counter()
 
     if cache_namespace:
-        cache_key = _build_cache_key(
-            cache_namespace,
-            {
-                "url": url,
-                "params": params,
-            },
-        )
-        cached_payload = _read_cached_json(cache_namespace, cache_key, cache_ttl_seconds)
-        if cached_payload is not None:
-            return cached_payload, {
-                "cache_hit": True,
-                "attempt_count": 0,
-                "retry_count": 0,
-                "retry_exhausted": False,
-                "retry_delay_ms": 0.0,
-                "status_code": 200,
-                "timeout_seconds": timeout_seconds,
-                "configured_timeout_seconds": timeout_seconds,
-                "total_timeout_seconds": total_timeout_seconds,
-                "retry_strategy": retry_strategy,
-                "duration_ms": 0.0,
-            }
+        cache_payload = {
+            "url": url,
+            "params": params,
+        }
+        if _is_cacheable_payload(cache_payload):
+            cache_key = _build_cache_key(cache_namespace, cache_payload)
+            cache_lookup_metadata = _read_cache_layers(
+                cache_namespace,
+                cache_key,
+                cache_ttl_seconds,
+            )
+            if cache_lookup_metadata is not None:
+                log_event(
+                    logger,
+                    "provider_cache_used",
+                    provider="alpaca",
+                    operation=operation,
+                    ticker=ticker,
+                    cache_namespace=cache_namespace,
+                    cache_layer=cache_lookup_metadata.get("cache_layer"),
+                    cache_key=cache_key,
+                    cache_age_seconds=cache_lookup_metadata.get("cache_age_seconds"),
+                )
+                return cache_lookup_metadata["value"], {
+                    **cache_lookup_metadata,
+                    "attempt_count": 0,
+                    "retry_count": 0,
+                    "retry_exhausted": False,
+                    "retry_delay_ms": 0.0,
+                    "status_code": 200,
+                    "timeout_seconds": timeout_seconds,
+                    "configured_timeout_seconds": timeout_seconds,
+                    "total_timeout_seconds": total_timeout_seconds,
+                    "retry_strategy": retry_strategy,
+                    "duration_ms": round((time.perf_counter() - total_started_at) * 1000, 2),
+                }
+
+            log_event(
+                logger,
+                "provider_cache_missed",
+                provider="alpaca",
+                operation=operation,
+                ticker=ticker,
+                cache_namespace=cache_namespace,
+                cache_key=cache_key,
+            )
+        else:
+            log_event(
+                logger,
+                "provider_cache_bypassed",
+                provider="alpaca",
+                operation=operation,
+                ticker=ticker,
+                cache_namespace=cache_namespace,
+                bypass_reason="invalid_cache_payload",
+            )
 
     last_error = None
     total_retry_delay_seconds = 0.0
@@ -311,7 +551,16 @@ def _request_provider_json(
                         )
                     else:
                         if cache_namespace and cache_key:
-                            _write_cached_json(cache_namespace, cache_key, payload)
+                            _write_cache_layers(
+                                cache_namespace,
+                                cache_key,
+                                payload,
+                                cache_ttl_seconds,
+                                source_duration_ms=round(
+                                    (time.perf_counter() - total_started_at) * 1000,
+                                    2,
+                                ),
+                            )
                         total_duration_ms = round(
                             (time.perf_counter() - total_started_at) * 1000,
                             2,
@@ -337,6 +586,12 @@ def _request_provider_json(
                         )
                         return payload, {
                             "cache_hit": False,
+                            "cache_miss": True,
+                            "cache_layer": None,
+                            "cache_key": cache_key,
+                            "cache_age_seconds": None,
+                            "cache_lookup_duration_ms": None,
+                            "estimated_saved_duration_ms": 0.0,
                             "attempt_count": attempt,
                             "retry_count": retry_count,
                             "retry_exhausted": False,
@@ -445,21 +700,53 @@ def build_market_data_cache_key(tickers, dte_min, dte_max):
     return hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
 
+def build_ticker_provider_cache_key(ticker, dte_min, dte_max):
+    return _build_cache_key(
+        "provider_ticker_data",
+        {
+            "ticker": ticker,
+            "dte_min": dte_min,
+            "dte_max": dte_max,
+            "provider": "alpaca",
+        },
+    )
+
+
 def get_cache_file_path(cache_key):
     return get_cache_dir() / f"market_data_{cache_key}.json"
 
 
 def get_cached_market_data(cache_key):
     runtime = _provider_runtime_settings()
-    return _read_cached_json(
+    entry = _read_cache_layers(
+        "market_data",
+        cache_key,
+        int(runtime["market_data_cache_ttl_seconds"]),
+    )
+    if entry is None:
+        return None
+
+    return entry["value"]
+
+
+def get_cached_market_data_entry(cache_key):
+    runtime = _provider_runtime_settings()
+    return _read_cache_layers(
         "market_data",
         cache_key,
         int(runtime["market_data_cache_ttl_seconds"]),
     )
 
 
-def set_cached_market_data(cache_key, value):
-    _write_cached_json("market_data", cache_key, value)
+def set_cached_market_data(cache_key, value, source_duration_ms=None):
+    runtime = _provider_runtime_settings()
+    _write_cache_layers(
+        "market_data",
+        cache_key,
+        value,
+        int(runtime["market_data_cache_ttl_seconds"]),
+        source_duration_ms=source_duration_ms,
+    )
     
     
 
@@ -473,17 +760,26 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
         ticker_count=len(tickers or []),
     )
     cache_key = build_market_data_cache_key(tickers, dte_min, dte_max)
-    cached_value = get_cached_market_data(cache_key)
+    cached_entry = get_cached_market_data_entry(cache_key)
 
-    if cached_value is not None:
+    if cached_entry is not None:
+        cached_value = cached_entry["value"]
         cached_value.setdefault("cache", {})
         cached_value["cache"]["market_data"] = {
             "hit": True,
             "ttl_seconds": int(_provider_runtime_settings()["market_data_cache_ttl_seconds"]),
+            "layer": cached_entry.get("cache_layer"),
+            "key": cached_entry.get("cache_key"),
+            "age_seconds": cached_entry.get("cache_age_seconds"),
         }
         cached_value.setdefault("performance", {})
         cached_value["performance"]["provider_duration_ms"] = round(
             (time.perf_counter() - started_at) * 1000, 2
+        )
+        cached_value["performance"]["cache_hit_rate"] = 1.0
+        cached_value["performance"]["provider_call_reduction_count"] = 1
+        cached_value["performance"]["estimated_cache_saved_duration_ms"] = (
+            cached_entry.get("estimated_saved_duration_ms") or 0.0
         )
         log_event(
             logger,
@@ -491,6 +787,7 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
             provider=provider,
             duration_ms=round((time.perf_counter() - started_at) * 1000, 2),
             cache_hit=True,
+            cache_layer=cached_entry.get("cache_layer"),
             missing_ticker_count=len(cached_value.get("missing_tickers", [])),
         )
         return cached_value
@@ -504,6 +801,9 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
     result["cache"]["market_data"] = {
         "hit": False,
         "ttl_seconds": int(_provider_runtime_settings()["market_data_cache_ttl_seconds"]),
+        "layer": None,
+        "key": cache_key,
+        "age_seconds": None,
     }
     result.setdefault("performance", {})
     result["performance"]["provider_duration_ms"] = round(
@@ -511,7 +811,11 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
     )
     provider_performance = result.get("performance", {}) or {}
     if not result.get("provider_errors"):
-        set_cached_market_data(cache_key, result)
+        set_cached_market_data(
+            cache_key,
+            result,
+            source_duration_ms=result["performance"]["provider_duration_ms"],
+        )
     log_event(
         logger,
         "provider_request_completed",
@@ -602,10 +906,12 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
     total_retry_count = 0
     retry_exhausted_count = 0
     cache_summary = {
+        "ticker_data": {"hits": 0, "misses": 0, "memory_hits": 0, "file_hits": 0},
         "contracts": {"hits": 0, "misses": 0},
         "snapshots": {"hits": 0, "misses": 0},
         "underlying": {"hits": 0, "misses": 0},
     }
+    estimated_cache_saved_duration_ms = 0.0
 
     for ticker in tickers:
         ticker_started_at = time.perf_counter()
@@ -616,12 +922,65 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             ticker=ticker,
         )
         try:
+            ticker_cache_key = None
+            ticker_cache_entry = None
+            if _is_cacheable_payload({"ticker": ticker, "dte_min": dte_min, "dte_max": dte_max}):
+                ticker_cache_key = build_ticker_provider_cache_key(ticker, dte_min, dte_max)
+                ticker_cache_entry = _read_in_memory_cache(
+                    "provider_ticker_data",
+                    ticker_cache_key,
+                    int(_provider_runtime_settings()["provider_ticker_data_cache_ttl_seconds"]),
+                )
+
+            if ticker_cache_entry is not None:
+                normalized = ticker_cache_entry["value"]
+                market_data[ticker] = normalized
+                cache_summary["ticker_data"]["hits"] += 1
+                if ticker_cache_entry.get("cache_layer") == "memory":
+                    cache_summary["ticker_data"]["memory_hits"] += 1
+                estimated_cache_saved_duration_ms += float(
+                    ticker_cache_entry.get("estimated_saved_duration_ms") or 0.0
+                )
+                ticker_diagnostics.append(
+                    {
+                        "ticker": ticker,
+                        "provider_status": "ok",
+                        "provider": "alpaca",
+                        "cache_hit": True,
+                        "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                        "provider_diagnostics": {
+                            **dict(normalized.get("provider_diagnostics") or {}),
+                            "cache_layer": ticker_cache_entry.get("cache_layer"),
+                            "cache_key": ticker_cache_entry.get("cache_key"),
+                            "cache_age_seconds": ticker_cache_entry.get("cache_age_seconds"),
+                            "estimated_saved_duration_ms": ticker_cache_entry.get("estimated_saved_duration_ms"),
+                        },
+                    }
+                )
+                log_event(
+                    logger,
+                    "provider_cache_used",
+                    provider="alpaca",
+                    operation="ticker_provider_data",
+                    ticker=ticker,
+                    cache_namespace="provider_ticker_data",
+                    cache_layer=ticker_cache_entry.get("cache_layer"),
+                    cache_key=ticker_cache_entry.get("cache_key"),
+                    cache_age_seconds=ticker_cache_entry.get("cache_age_seconds"),
+                )
+                continue
+
+            cache_summary["ticker_data"]["misses"] += 1
             discovered = discover_option_contracts_for_window(
                 ticker=ticker,
                 dte_min=dte_min,
                 dte_max=dte_max,
             )
             cache_summary["contracts"]["hits" if discovered["request_metadata"].get("cache_hit") else "misses"] += 1
+            if discovered["request_metadata"].get("cache_hit"):
+                estimated_cache_saved_duration_ms += float(
+                    discovered["request_metadata"].get("estimated_saved_duration_ms") or 0.0
+                )
             total_retry_count += int(discovered["request_metadata"].get("retry_count", 0))
             retry_exhausted_count += int(bool(discovered["request_metadata"].get("retry_exhausted", False)))
 
@@ -661,10 +1020,17 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             option_snapshots = fetch_option_snapshots_for_symbols(option_symbols)
             cache_summary["snapshots"]["hits"] += option_snapshots["request_metadata"].get("cache_hits", 0)
             cache_summary["snapshots"]["misses"] += option_snapshots["request_metadata"].get("cache_misses", 0)
+            estimated_cache_saved_duration_ms += float(
+                option_snapshots["request_metadata"].get("estimated_saved_duration_ms") or 0.0
+            )
             total_retry_count += int(option_snapshots["request_metadata"].get("retry_count", 0))
             retry_exhausted_count += int(option_snapshots["request_metadata"].get("retry_exhausted_count", 0))
             underlying_trade = fetch_underlying_stock_trade(ticker)
             cache_summary["underlying"]["hits" if underlying_trade["request_metadata"].get("cache_hit") else "misses"] += 1
+            if underlying_trade["request_metadata"].get("cache_hit"):
+                estimated_cache_saved_duration_ms += float(
+                    underlying_trade["request_metadata"].get("estimated_saved_duration_ms") or 0.0
+                )
             total_retry_count += int(underlying_trade["request_metadata"].get("retry_count", 0))
             retry_exhausted_count += int(bool(underlying_trade["request_metadata"].get("retry_exhausted", False)))
 
@@ -717,6 +1083,20 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                 continue
 
             market_data[ticker] = normalized
+
+            if (
+                ticker_cache_key
+                and normalized.get("underlying_price") is not None
+                and normalized.get("contracts")
+                and not (normalized.get("provider_diagnostics") or {}).get("degraded")
+            ):
+                _write_in_memory_cache(
+                    "provider_ticker_data",
+                    ticker_cache_key,
+                    normalized,
+                    int(_provider_runtime_settings()["provider_ticker_data_cache_ttl_seconds"]),
+                    source_duration_ms=round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                )
 
             if not normalized["contracts"]:
                 missing_tickers.append(ticker)
@@ -799,6 +1179,34 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             "retry_count": total_retry_count,
             "retry_exhausted": retry_exhausted_count > 0,
             "retry_exhausted_count": retry_exhausted_count,
+            "cache_hit_rate": round(
+                (
+                    cache_summary["ticker_data"]["hits"]
+                    + cache_summary["contracts"]["hits"]
+                    + cache_summary["snapshots"]["hits"]
+                    + cache_summary["underlying"]["hits"]
+                )
+                /
+                max(
+                    1,
+                    cache_summary["ticker_data"]["hits"]
+                    + cache_summary["ticker_data"]["misses"]
+                    + cache_summary["contracts"]["hits"]
+                    + cache_summary["contracts"]["misses"]
+                    + cache_summary["snapshots"]["hits"]
+                    + cache_summary["snapshots"]["misses"]
+                    + cache_summary["underlying"]["hits"]
+                    + cache_summary["underlying"]["misses"],
+                ),
+                4,
+            ),
+            "provider_call_reduction_count": (
+                cache_summary["ticker_data"]["hits"]
+                + cache_summary["contracts"]["hits"]
+                + cache_summary["snapshots"]["hits"]
+                + cache_summary["underlying"]["hits"]
+            ),
+            "estimated_cache_saved_duration_ms": round(estimated_cache_saved_duration_ms, 2),
         },
     }
 
