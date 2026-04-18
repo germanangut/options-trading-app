@@ -99,8 +99,8 @@ GUIDED_SELECTIVITY_OPTIONS = [
     ("Only the stronger setups", 75),
 ]
 GUIDED_CONSISTENCY_OPTIONS = [
-    ("High confidence only", 5),
-    ("Some flexibility is okay", 3),
+    ("Seen often already", 5),
+    ("Seen a few times", 3),
     ("I’m open to newer setups", 2),
 ]
 
@@ -471,7 +471,7 @@ def _render_expert_sidebar(active_strategy_keys, strategy_label_lookup, last_out
             key="expert_min_ror_ui",
         )
         min_consistency = st.number_input(
-            "Min Consistency",
+            "Min Stability Appearances",
             min_value=0,
             max_value=20,
             step=1,
@@ -647,11 +647,11 @@ def _render_guided_sidebar(active_strategy_keys, strategy_label_lookup):
     )
 
     consistency_value = _render_guided_choice_cards(
-        "How confident should the trade be?",
+        "How many prior appearances should the trade have?",
         [
-            ("High confidence only", 5, "Prioritize trades with stronger confirmation."),
-            ("Some flexibility is okay", 3, "Use a balanced confidence threshold."),
-            ("I’m open to newer setups", 2, "Allow newer ideas that may have less confirmation."),
+            ("Seen often already", 5, "Prioritize trades that have appeared repeatedly across runs."),
+            ("Seen a few times", 3, "Use a balanced historical appearance threshold."),
+            ("I’m open to newer setups", 2, "Allow newer ideas that have appeared fewer times so far."),
         ],
         st.session_state.get("scan_min_consistency", 3),
         "guided_consistency_card",
@@ -692,8 +692,8 @@ def _render_guided_sidebar(active_strategy_keys, strategy_label_lookup):
         75: "I will focus on stronger setups only",
     }
     confidence_summary_lookup = {
-        5: "with high-confidence trade patterns",
-        3: "with a balanced confidence requirement",
+        5: "that have appeared repeatedly across runs",
+        3: "with a balanced historical appearance requirement",
         2: "including some newer setups",
     }
 
@@ -1201,7 +1201,7 @@ def render_trade_detail_execution_view(selected_trade, summary, qualified, outpu
 
     stability_panel = render_bordered_panel(
         "Stability & History",
-        "Simple consistency cues from available run fields.",
+        "Historical appearance and stability cues from available run fields.",
     )
     with stability_panel:
         consistency_value = (
@@ -1213,7 +1213,7 @@ def render_trade_detail_execution_view(selected_trade, summary, qualified, outpu
         render_metric_strip(
             [
                 {"label": "Times Seen", "value": selected_trade.get("stability_count", "n/a"), "accent": "#64748b"},
-                {"label": "Consistency", "value": consistency_value if consistency_value not in (None, "") else "n/a", "accent": "#14b8a6"},
+                {"label": "Stability Appearances", "value": consistency_value if consistency_value not in (None, "") else "n/a", "accent": "#14b8a6"},
                 {"label": "Recent Behavior", "value": format_value(recent_behavior, default="n/a"), "accent": "#64748b"},
             ],
             columns=3,
@@ -1459,7 +1459,7 @@ def render_top_decision_panel(
         render_warning_banner("No qualified trades were returned for this run.", level="info")
         render_empty_state(
             "No top decision available",
-            "Try widening the DTE range or lowering the minimum score/consistency thresholds.",
+            "Try widening the DTE range or lowering the minimum score/stability thresholds.",
         )
         return
 

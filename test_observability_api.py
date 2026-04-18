@@ -1,3 +1,5 @@
+import json
+import io
 import logging
 from pathlib import Path
 import shutil
@@ -15,6 +17,7 @@ pytest.importorskip("httpx")
 from fastapi.testclient import TestClient
 
 from backend.api.main import app
+from backend.observability.logging import JsonLogFormatter
 from backend.repositories.factory import get_auth_repository
 from backend.services.scan_store import clear_scan_store
 
@@ -131,6 +134,66 @@ def test_authenticated_scan_request_echoes_supplied_request_id(monkeypatch):
         assert response.headers["x-request-id"] == request_id
         assert response.json()["scan_metadata"]["scan_id"].startswith("scan_")
     finally:
+        shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
+
+
+def test_scan_lifecycle_logs_remain_structured_and_traceable_by_request_id(monkeypatch):
+    workspace_tmp_dir = Path("tmp_test_observability_api") / str(uuid.uuid4())
+    workspace_tmp_dir.mkdir(parents=True, exist_ok=True)
+    _force_mock_mode(monkeypatch, workspace_tmp_dir)
+    clear_scan_store()
+    get_auth_repository().clear()
+
+    try:
+        stream = io.StringIO()
+        handler = logging.StreamHandler(stream)
+        handler.setFormatter(JsonLogFormatter())
+        logging.getLogger().addHandler(handler)
+        client = TestClient(app)
+        headers = _register_and_get_headers(client, f"logs-{uuid.uuid4().hex}@example.com")
+        request_id = f"req-log-{uuid.uuid4().hex}"
+
+        response = client.post(
+            "/scans",
+            json={
+                "profile": "balanced",
+                "ticker_group": "tech",
+                "selected_strategy_keys": ["bull_put_spread", "bear_call_spread"],
+                "dte_min": 20,
+                "dte_max": 35,
+                "min_score": 65,
+                "min_consistency": 3,
+            },
+            headers={**headers, "X-Request-ID": request_id},
+        )
+
+        assert response.status_code == 200
+
+        handler.flush()
+        captured = stream.getvalue().splitlines()
+        matching_records = []
+        for line in captured:
+            try:
+                payload = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+            if payload.get("request_id") == request_id:
+                matching_records.append(payload)
+
+        assert matching_records
+        assert {record.get("event") for record in matching_records} >= {
+            "request_started",
+            "scan_started",
+            "scan_completed",
+            "request_completed",
+        }
+        assert all("timestamp" in record for record in matching_records)
+        assert all("level" in record for record in matching_records)
+        assert all("logger" in record for record in matching_records)
+    finally:
+        logging.getLogger().removeHandler(handler)
+        handler.close()
         shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
 
 

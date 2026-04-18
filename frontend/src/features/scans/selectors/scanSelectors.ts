@@ -13,12 +13,28 @@ const HIGH_PROVIDER_DURATION_MS = 4000;
 const LOW_CACHE_HIT_RATE = 0.35;
 
 
+function arrayOrEmpty<T>(value: T[] | null | undefined) {
+  return Array.isArray(value) ? value : [];
+}
+
+function objectOrEmpty<T extends Record<string, unknown>>(value: T | null | undefined) {
+  return value && typeof value === "object" ? value : ({} as T);
+}
+
+
 function scanDiagnostics(scanResult: ScanResult) {
-  return scanResult.diagnostics ?? {
-    missing_tickers: [],
-    provider_errors: [],
-    alerts_export_path: null,
-    top_overall_identity: null,
+  const diagnostics = objectOrEmpty(scanResult?.diagnostics);
+
+  return {
+    ...diagnostics,
+    missing_tickers: arrayOrEmpty(diagnostics.missing_tickers as string[] | null | undefined),
+    provider_errors: arrayOrEmpty(
+      diagnostics.provider_errors as Array<Record<string, unknown>> | null | undefined,
+    ),
+    alerts_export_path: diagnostics.alerts_export_path ?? null,
+    top_overall_identity: diagnostics.top_overall_identity ?? null,
+    performance: objectOrEmpty(diagnostics.performance as Record<string, unknown> | null | undefined),
+    cache: objectOrEmpty(diagnostics.cache as Record<string, unknown> | null | undefined),
   };
 }
 
@@ -86,10 +102,10 @@ export function selectScanReliabilityNotice(scanResult?: ScanResult | null) {
   }
 
   const diagnostics = scanDiagnostics(scanResult);
-  const providerErrors = diagnostics.provider_errors ?? [];
-  const missingTickers = diagnostics.missing_tickers ?? [];
-  const performance = diagnostics.performance ?? {};
-  const cache = diagnostics.cache ?? {};
+  const providerErrors = diagnostics.provider_errors;
+  const missingTickers = diagnostics.missing_tickers;
+  const performance = diagnostics.performance;
+  const cache = diagnostics.cache;
   const providerDurationMs = Number(performance.provider_duration_ms ?? NaN);
   const retryCount = Number(performance.retry_count ?? 0);
   const retryExhausted = Boolean(performance.retry_exhausted);
@@ -215,16 +231,18 @@ export function buildTemporaryTradeId(trade: Pick<
 
 export function selectOverviewModel(scanResult: ScanResult) {
   const diagnostics = scanDiagnostics(scanResult);
-  const topOpportunity = scanResult.summary.top_overall;
+  const summary = objectOrEmpty(scanResult?.summary);
+  const alerts = arrayOrEmpty(scanResult?.alerts);
+  const topOpportunity = (summary.top_overall as QualifiedTradeRow | null | undefined) ?? null;
 
   return {
     kpis: [
-      { label: "Qualified Trades", value: scanResult.summary.qualified_count },
-      { label: "Near Misses", value: scanResult.summary.near_miss_count },
-      { label: "Alerts", value: scanResult.alerts.length },
+      { label: "Qualified Trades", value: Number(summary.qualified_count ?? 0) },
+      { label: "Near Misses", value: Number(summary.near_miss_count ?? 0) },
+      { label: "Alerts", value: alerts.length },
       {
         label: "Runtime",
-        value: scanResult.scan_metadata.execution_time_seconds,
+        value: scanResult.scan_metadata?.execution_time_seconds ?? null,
       },
     ],
     topOpportunity,
@@ -243,9 +261,11 @@ export function selectOverviewModel(scanResult: ScanResult) {
 }
 
 export function selectQualifiedTradesModel(scanResult: ScanResult) {
+  const qualifiedTrades = arrayOrEmpty(scanResult?.qualified_trades);
+
   return {
-    total: scanResult.qualified_trades.length,
-    rows: scanResult.qualified_trades.map((trade) => ({
+    total: qualifiedTrades.length,
+    rows: qualifiedTrades.map((trade) => ({
       id: buildTemporaryTradeId(trade),
       trade,
       score: fallbackScore(trade),
@@ -256,20 +276,21 @@ export function selectQualifiedTradesModel(scanResult: ScanResult) {
 export function selectAlertsModel(scanResult: ScanResult) {
   const diagnostics = scanDiagnostics(scanResult);
   const performance = (diagnostics.performance ?? {}) as Record<string, unknown>;
+  const alerts = arrayOrEmpty(scanResult?.alerts);
   const failedTickerCount = resolveFailedTickerCount(
-    diagnostics.provider_errors ?? [],
-    diagnostics.missing_tickers ?? [],
+    diagnostics.provider_errors,
+    diagnostics.missing_tickers,
     performance,
     Boolean(diagnostics.partial_result),
   );
   const partialCoverage = Boolean(diagnostics.partial_result)
-    || (diagnostics.provider_errors ?? []).length > 0
-    || (diagnostics.missing_tickers ?? []).length > 0;
+    || diagnostics.provider_errors.length > 0
+    || diagnostics.missing_tickers.length > 0;
 
   return {
-    total: scanResult.alerts.length,
-    providerErrors: diagnostics.provider_errors ?? [],
-    missingTickers: diagnostics.missing_tickers ?? [],
+    total: alerts.length,
+    providerErrors: diagnostics.provider_errors,
+    missingTickers: diagnostics.missing_tickers,
     partialResult: Boolean(diagnostics.partial_result),
     failedTickerCount,
     partialNotice: partialCoverage
@@ -287,7 +308,7 @@ export function selectAlertsModel(scanResult: ScanResult) {
           title: "No alerts",
           message: "Nothing currently cleared the strongest alert thresholds. If you want a wider review set, broaden the ticker group or lower the score floor.",
         },
-    rows: scanResult.alerts.map((alert: AlertItem) => ({
+    rows: alerts.map((alert: AlertItem) => ({
       id: buildTemporaryTradeId(alert),
       trade: alert,
       score: fallbackScore(alert),
@@ -306,7 +327,10 @@ export function selectTradeDetailModel(scanResult: ScanResult, tradeId?: string)
     };
   }
 
-  const allTrades = [...scanResult.qualified_trades, ...scanResult.alerts];
+  const allTrades = [
+    ...arrayOrEmpty(scanResult?.qualified_trades),
+    ...arrayOrEmpty(scanResult?.alerts),
+  ];
   const trade = allTrades.find((candidate) => {
     const rawKey = buildTemporaryTradeKey(candidate);
     return tradeId === rawKey || tradeId === encodeURIComponent(rawKey);
@@ -336,8 +360,9 @@ export function selectTradeDetailModel(scanResult: ScanResult, tradeId?: string)
 }
 
 export function selectHistoryModel(scanResult: ScanResult) {
+  const historyContext = objectOrEmpty(scanResult?.history_context);
   const intelligence: HistoricalIntelligenceSummary =
-    scanResult.history_context.historical_intelligence_summary ?? {};
+    (historyContext.historical_intelligence_summary as HistoricalIntelligenceSummary | undefined) ?? {};
   const metadata = intelligence.metadata ?? {};
   const signalQuality = intelligence.signal_quality_summary ?? {};
   const featureSummary = intelligence.feature_summary ?? {};
@@ -361,19 +386,22 @@ export function selectHistoryModel(scanResult: ScanResult) {
 
 export function selectDailySummaryModel(scanResult: ScanResult) {
   const diagnostics = scanDiagnostics(scanResult);
-  const summary: DailySummary = scanResult.daily_summary ?? {};
+  const summary: DailySummary = scanResult?.daily_summary ?? {};
+  const metadata = objectOrEmpty(scanResult?.scan_metadata);
+  const baseSummary = objectOrEmpty(scanResult?.summary);
+  const alerts = arrayOrEmpty(scanResult?.alerts);
 
   return {
     headline: {
-      profile: summary.profile ?? scanResult.scan_metadata.profile,
-      tickerGroup: summary.ticker_group ?? scanResult.scan_metadata.ticker_group,
-      qualifiedCount: summary.qualified_count ?? scanResult.summary.qualified_count,
-      nearMissCount: summary.near_miss_count ?? scanResult.summary.near_miss_count,
-      alertsCount: summary.alerts_count ?? scanResult.alerts.length,
+      profile: summary.profile ?? metadata.profile,
+      tickerGroup: summary.ticker_group ?? metadata.ticker_group,
+      qualifiedCount: summary.qualified_count ?? Number(baseSummary.qualified_count ?? 0),
+      nearMissCount: summary.near_miss_count ?? Number(baseSummary.near_miss_count ?? 0),
+      alertsCount: summary.alerts_count ?? alerts.length,
       executionTimeSeconds:
-        summary.execution_time_seconds ?? scanResult.scan_metadata.execution_time_seconds,
+        summary.execution_time_seconds ?? metadata.execution_time_seconds ?? null,
     },
-    topOpportunity: summary.top_overall ?? scanResult.summary.top_overall,
+    topOpportunity: summary.top_overall ?? baseSummary.top_overall ?? null,
     alertSignals: [
       { label: "Stable Alerts", value: summary.stable_alert_count ?? 0 },
       { label: "Emerging Alerts", value: summary.emerging_alert_count ?? 0 },
@@ -396,12 +424,13 @@ export function selectPortfolioModel(scanResult: ScanResult) {
   const exposure = portfolio.exposure ?? {};
   const positionSizing = portfolio.position_sizing ?? {};
   const decision = portfolio.decision ?? {};
+  const baseSummary = objectOrEmpty(scanResult?.summary);
 
   return {
     summaryCards: [
       {
         label: "Qualified Trades",
-        value: exposure.metadata?.qualified_trade_count ?? scanResult.summary.qualified_count,
+        value: exposure.metadata?.qualified_trade_count ?? Number(baseSummary.qualified_count ?? 0),
       },
       {
         label: "Fits Budget",
@@ -416,13 +445,13 @@ export function selectPortfolioModel(scanResult: ScanResult) {
         value: decision.posture_label ?? "Portfolio View",
       },
     ],
-    exposureNotes: exposure.notes ?? [],
-    topTickerConcentration: exposure.qualified?.top_ticker_concentration ?? [],
-    directionalExposure: exposure.qualified?.directional_exposure ?? [],
-    positions: positionSizing.trade_sizing ?? [],
-    warnings: positionSizing.warnings ?? [],
-    interpretation: decision.interpretation ?? [],
-    cautions: decision.cautions ?? [],
-    keySignals: decision.key_portfolio_signals ?? [],
+    exposureNotes: arrayOrEmpty(exposure.notes),
+    topTickerConcentration: arrayOrEmpty(exposure.qualified?.top_ticker_concentration),
+    directionalExposure: arrayOrEmpty(exposure.qualified?.directional_exposure),
+    positions: arrayOrEmpty(positionSizing.trade_sizing),
+    warnings: arrayOrEmpty(positionSizing.warnings),
+    interpretation: arrayOrEmpty(decision.interpretation),
+    cautions: arrayOrEmpty(decision.cautions),
+    keySignals: arrayOrEmpty(decision.key_portfolio_signals),
   };
 }

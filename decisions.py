@@ -117,6 +117,28 @@ def compute_penalties(spread):
         "total_penalty": round(total_penalty, 2),
     }
 
+
+def compose_adjusted_score(spread, stability_boost=None):
+    if spread is None:
+        return 0.0
+
+    penalties = spread.get("penalties") or {}
+    resolved_stability_boost = (
+        spread.get("stability_boost", 0.0)
+        if stability_boost is None
+        else stability_boost
+    )
+
+    adjusted_score = (
+        (spread.get("score") or 0.0)
+        + (spread.get("consistency_bonus") or 0.0)
+        + (spread.get("volatility_boost") or 0.0)
+        + (resolved_stability_boost or 0.0)
+        - (penalties.get("total_penalty") or 0.0)
+    )
+
+    return round(adjusted_score, 2)
+
 def classify_spread(spread):
     if spread is None:
         return None
@@ -194,18 +216,8 @@ def classify_spread(spread):
     spread["consistency_bonus"] = round(bonus, 2)
     spread["volatility_boost"] = round(volatility_boost, 2)
     spread["penalties"] = penalties
-
-    adjusted_score = (
-        spread["score"]
-        + bonus
-        + volatility_boost
-        - penalties["total_penalty"]
-    )
-    spread["adjusted_score"] = round(adjusted_score, 2)
-    spread["penalties"] = penalties
-
-    adjusted_score = spread["score"] + bonus - penalties["total_penalty"]
-    spread["adjusted_score"] = round(adjusted_score, 2)
+    spread["stability_boost"] = 0.0
+    spread["adjusted_score"] = compose_adjusted_score(spread)
 
     if "score_breakdown" in spread:
         spread["score_breakdown"]["consistency_bonus"] = round(bonus, 2)
@@ -214,6 +226,7 @@ def classify_spread(spread):
         spread["score_breakdown"]["width_penalty"] = penalties["width_penalty"]
         spread["score_breakdown"]["volatility_penalty"] = penalties["volatility_penalty"]
         spread["score_breakdown"]["total_penalty"] = penalties["total_penalty"]
+        spread["score_breakdown"]["stability_boost"] = 0.0
         spread["score_breakdown"]["adjusted_score"] = spread["adjusted_score"]
             
     warning_flag, warning_reason = get_price_context_warning(spread)

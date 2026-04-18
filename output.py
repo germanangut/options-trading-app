@@ -52,7 +52,7 @@ def build_alerts(qualified, min_score=65, min_consistency=3):
         if (
             spread["label"] == "High Quality"
             and spread.get("adjusted_score", 0) >= min_score
-            and spread.get("consistency_bonus", 0) >= min_consistency
+            and spread.get("stability_count", 0) >= min_consistency
             and spread.get("volatility_context") in allowed_volatility_contexts
         ):
             alerts.append(spread)
@@ -94,15 +94,9 @@ def filter_results(results, min_score=65, min_consistency=3):
     )
 
     summary = build_summary(qualified, near_miss)
-    alerts = build_alerts(
-                qualified,
-                min_score=min_score,
-                min_consistency=min_consistency
-            )
-
     return {
         "summary": summary,
-        "alerts": alerts,
+        "alerts": [],
         "qualified": qualified,
         "near_miss": near_miss,
         "ticker_diagnostics": ticker_diagnostics,

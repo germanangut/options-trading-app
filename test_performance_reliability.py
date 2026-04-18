@@ -103,6 +103,94 @@ def test_run_scan_engine_keeps_successful_tickers_when_one_provider_result_fails
     assert result["performance"]["ticker_cache_miss_count"] == 2
 
 
+def test_run_scan_engine_returns_consistent_empty_shape_when_all_tickers_fail(monkeypatch):
+    provider_result = {
+        "market_data": {},
+        "missing_tickers": ["AAA", "BBB"],
+        "provider": "alpaca-contracts-plus-symbol-snapshots",
+        "provider_errors": [
+            {
+                "ticker": "AAA",
+                "error": "Provider request timed out.",
+                "category": "timeout",
+                "retry_count": 2,
+            },
+            {
+                "ticker": "BBB",
+                "error": "Provider retry budget exhausted.",
+                "category": "timeout",
+                "retry_count": 3,
+            },
+        ],
+        "ticker_diagnostics": [
+            {
+                "ticker": "AAA",
+                "provider_status": "error",
+                "provider": "alpaca",
+                "cache_hit": False,
+                "cache_miss": True,
+                "provider_call_count": 3,
+                "provider_duration_ms": 155.0,
+                "retry_count": 2,
+                "duration_ms": 155.0,
+                "provider_diagnostics": {"ticker": "AAA", "reason": "Provider request timed out."},
+            },
+            {
+                "ticker": "BBB",
+                "provider_status": "error",
+                "provider": "alpaca",
+                "cache_hit": False,
+                "cache_miss": True,
+                "provider_call_count": 4,
+                "provider_duration_ms": 220.0,
+                "retry_count": 3,
+                "duration_ms": 220.0,
+                "provider_diagnostics": {"ticker": "BBB", "reason": "Provider retry budget exhausted."},
+            },
+        ],
+        "cache": {
+            "market_data": {"hit": False},
+            "contracts": {"hits": 0, "misses": 2},
+            "snapshots": {"hits": 0, "misses": 2},
+            "underlying": {"hits": 0, "misses": 2},
+        },
+        "performance": {
+            "provider_duration_ms": 375.0,
+            "total_provider_calls": 7,
+            "average_provider_latency_ms": 53.57,
+            "retry_count": 5,
+            "retry_exhausted": True,
+            "retry_latency_impact_ms": 260.0,
+            "estimated_cache_saved_duration_ms": 0.0,
+        },
+    }
+
+    monkeypatch.setattr("engine.get_market_data", lambda *args, **kwargs: provider_result)
+
+    result = run_scan_engine(
+        profile_name="balanced",
+        group_name="tech",
+        tickers=["AAA", "BBB"],
+        persist_history=False,
+    )
+
+    assert result["partial_result"] is True
+    assert result["qualified"] == []
+    assert result["alerts"] == []
+    assert result["summary"]["qualified_count"] == 0
+    assert result["summary"]["top_overall"] is None
+    assert result["missing_tickers"] == ["AAA", "BBB"]
+    assert len(result["provider_errors"]) == 2
+    assert len(result["ticker_diagnostics"]) == 2
+    assert all(item["provider_status"] == "error" for item in result["ticker_diagnostics"])
+    assert result["performance"]["processed_ticker_count"] == 2
+    assert result["performance"]["successful_ticker_count"] == 0
+    assert result["performance"]["failed_ticker_count"] == 2
+    assert result["performance"]["retry_count"] == 5
+    assert result["performance"]["retry_exhausted"] is True
+    assert result["performance"]["retry_latency_impact_ms"] == pytest.approx(260.0, abs=0.01)
+
+
 def test_discover_contracts_retries_after_timeout(monkeypatch):
     workspace_tmp_dir = _workspace_tmp_dir()
     call_count = {"value": 0}

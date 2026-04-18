@@ -3,6 +3,10 @@ import { describe, expect, it } from "vitest";
 import type { ScanResult } from "../../../types/api";
 import {
   selectAlertsModel,
+  selectDailySummaryModel,
+  selectHistoryModel,
+  selectOverviewModel,
+  selectPortfolioModel,
   selectScanPerformanceSummary,
   selectScanReliabilityNotice,
 } from "./scanSelectors";
@@ -113,5 +117,35 @@ describe("selectScanPerformanceSummary", () => {
     expect(alerts.partialNotice?.title).toBe("Partial results available");
     expect(alerts.partialNotice?.message).toContain("2 ticker(s) failed or were unavailable");
     expect(alerts.emptyState.title).toBe("No alerts under partial coverage");
+  });
+
+  it("returns stable empty structures for sparse scan payloads", () => {
+    const sparseScan = {
+      scan_metadata: buildScanResult().scan_metadata,
+      summary: null,
+      qualified_trades: null,
+      alerts: null,
+      near_miss_trades: null,
+      ticker_diagnostics: null,
+      portfolio_summary: null,
+      history_context: null,
+      daily_summary: null,
+      diagnostics: null,
+    } as unknown as ScanResult;
+
+    const overview = selectOverviewModel(sparseScan);
+    const alerts = selectAlertsModel(sparseScan);
+    const history = selectHistoryModel(sparseScan);
+    const dailySummary = selectDailySummaryModel(sparseScan);
+    const portfolio = selectPortfolioModel(sparseScan);
+
+    expect(selectScanReliabilityNotice(sparseScan)).toBeNull();
+    expect(overview.kpis[0].value).toBe(0);
+    expect(alerts.rows).toEqual([]);
+    expect(alerts.emptyState.title).toBe("No alerts");
+    expect(history.summaryCards[0].value).toBe(0);
+    expect(dailySummary.headline.qualifiedCount).toBe(0);
+    expect(portfolio.positions).toEqual([]);
+    expect(portfolio.summaryCards[0].value).toBe(0);
   });
 });

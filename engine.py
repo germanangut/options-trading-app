@@ -3,11 +3,11 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from data_provider import get_market_data, is_cached_market_data_available
 from backend.observability.logging import get_logger, log_event
-from decisions import classify_spread
+from decisions import classify_spread, compose_adjusted_score
 from exporter import export_alerts_to_csv
 from history import save_scan, compute_alert_stability
 from metrics import evaluate_spread
-from output import filter_results, build_summary
+from output import build_alerts, filter_results, build_summary
 from portfolio import (
     compute_portfolio_exposure_summary,
     compute_position_sizing_summary,
@@ -229,9 +229,18 @@ def _merge_ticker_diagnostics(tickers, results, provider_ticker_diagnostics):
 def enrich_spreads_with_stability(spreads, stability_map):
     for spread in spreads:
         key = f"{spread.get('ticker')}|{spread.get('strategy_type')}"
-        stability_info = stability_map.get(key, {"count": 0, "stability": "new"})
-        spread["stability_count"] = stability_info["count"]
-        spread["stability_level"] = stability_info["stability"]
+        historical_count = (stability_map.get(key, {}) or {}).get("count", 0)
+        stability_count = int(historical_count) + 1
+
+        if stability_count >= 3:
+            stability_level = "stable"
+        elif stability_count == 2:
+            stability_level = "emerging"
+        else:
+            stability_level = "new"
+
+        spread["stability_count"] = stability_count
+        spread["stability_level"] = stability_level
 
 
 def compute_stability_boost(stability_level):
@@ -248,9 +257,7 @@ def apply_stability_boost(spreads):
         stability_boost = compute_stability_boost(stability_level)
 
         spread["stability_boost"] = round(stability_boost, 2)
-        spread["adjusted_score"] = round(
-            spread.get("adjusted_score", 0) + stability_boost, 2
-        )
+        spread["adjusted_score"] = compose_adjusted_score(spread)
 
         if "score_breakdown" in spread:
             spread["score_breakdown"]["stability_boost"] = round(stability_boost, 2)
@@ -377,10 +384,15 @@ def run_scan_engine(
     )
 
     stability_map = compute_alert_stability()
-    enrich_spreads_with_stability(filtered.get("alerts", []), stability_map)
     enrich_spreads_with_stability(filtered.get("qualified", []), stability_map)
 
     apply_stability_boost(filtered.get("qualified", []))
+
+    filtered["alerts"] = build_alerts(
+        filtered.get("qualified", []),
+        min_score=min_score,
+        min_consistency=min_consistency,
+    )
 
     filtered["alerts"].sort(
         key=lambda s: s.get("adjusted_score", 0),
@@ -468,6 +480,8 @@ def run_scan_engine(
     filtered["alert_thresholds"] = {
         "min_score": min_score,
         "min_consistency": min_consistency,
+        "consistency_field": "stability_count",
+        "evaluation_stage": "post_enrichment",
     }
     filtered["dte_range"] = {
         "dte_min": dte_min,
@@ -478,6 +492,15 @@ def run_scan_engine(
         filtered["alerts_export_path"] = export_alerts_to_csv(filtered.get("alerts", []))
     else:
         filtered["alerts_export_path"] = None
+
+    log_event(
+        logger,
+        "scan_alerts_evaluated",
+        evaluation_stage="post_enrichment",
+        consistency_field="stability_count",
+        qualified_count=len(filtered.get("qualified", [])),
+        alerts_count=len(filtered.get("alerts", [])),
+    )
 
     if persist_history:
         save_scan(filtered)

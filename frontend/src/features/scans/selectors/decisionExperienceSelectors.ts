@@ -10,6 +10,8 @@ import {
   formatValueLabel,
 } from "../../../lib/formatters";
 import type {
+  HistoricalIntelligenceSummary,
+  HistoryMetadata,
   PortfolioSummary,
   ScanRequest,
   ScanResult,
@@ -26,6 +28,15 @@ type WorkflowMode = "guided" | "expert";
 const profileLookup = Object.fromEntries(PROFILE_OPTIONS.map((option) => [option.value, option.label]));
 const tickerLookup = Object.fromEntries(TICKER_GROUP_OPTIONS.map((option) => [option.value, option.label]));
 const strategyLookup = Object.fromEntries(STRATEGY_OPTIONS.map((option) => [option.value, option.label]));
+
+
+function arrayOrEmpty<T>(value: T[] | null | undefined) {
+  return Array.isArray(value) ? value : [];
+}
+
+function objectOrEmpty<T extends Record<string, unknown>>(value: T | null | undefined) {
+  return value && typeof value === "object" ? value : ({} as T);
+}
 
 
 function fallbackScore(trade: Pick<TradeIdentityFields, "adjusted_score" | "score">) {
@@ -123,17 +134,21 @@ function portfolioPosture(portfolioSummary: PortfolioSummary | undefined) {
 
 
 export function selectOverviewCockpitModel(scanResult: ScanResult) {
-  const diagnostics = scanResult.diagnostics ?? { missing_tickers: [], provider_errors: [] };
-  const qualifiedTrades = scanResult.qualified_trades ?? [];
-  const alerts = scanResult.alerts ?? [];
-  const topTrade = scanResult.summary.top_overall ?? qualifiedTrades[0] ?? null;
-  const providerErrors = (diagnostics.provider_errors ?? []).length;
-  const missingTickers = diagnostics.missing_tickers ?? [];
-  const qualifiedCount = scanResult.summary.qualified_count ?? qualifiedTrades.length;
+  const diagnostics = objectOrEmpty(scanResult.diagnostics) as ScanResult["diagnostics"];
+  const qualifiedTrades = arrayOrEmpty(scanResult.qualified_trades);
+  const alerts = arrayOrEmpty(scanResult.alerts);
+  const summary = objectOrEmpty(scanResult.summary);
+  const topTrade = (summary.top_overall as TradeIdentityFields | null | undefined) ?? qualifiedTrades[0] ?? null;
+  const providerErrors = arrayOrEmpty(diagnostics.provider_errors).length;
+  const missingTickers = arrayOrEmpty(diagnostics.missing_tickers);
+  const qualifiedCount = Number(summary.qualified_count ?? qualifiedTrades.length);
   const alertsCount = alerts.length;
-  const historySummary = scanResult.history_context.historical_intelligence_summary ?? {};
-  const historyMetadata = historySummary.metadata ?? {};
-  const recurringPatterns = historySummary.signal_quality_summary?.recurring_high_quality_patterns ?? [];
+  const historyContext = objectOrEmpty(scanResult.history_context);
+  const historySummary = (historyContext.historical_intelligence_summary ?? {}) as HistoricalIntelligenceSummary;
+  const historyMetadata: HistoryMetadata = historySummary.metadata ?? {};
+  const recurringPatterns = arrayOrEmpty(
+    historySummary.signal_quality_summary?.recurring_high_quality_patterns,
+  );
   const portfolio = portfolioPosture(scanResult.portfolio_summary);
   const performance = (diagnostics.performance ?? {}) as Record<string, unknown>;
   const cache = (diagnostics.cache ?? {}) as Record<string, unknown>;
@@ -163,11 +178,11 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
         ? `Top current candidate under the active ${scanResult.scan_metadata.profile} profile.`
         : "No trade currently leads the latest scan.",
       metrics: [
-        { label: "Qualified", value: scanResult.summary.qualified_count, tone: "success" as const },
-        { label: "Alerts", value: scanResult.alerts.length, tone: "warning" as const },
+        { label: "Qualified", value: qualifiedCount, tone: "success" as const },
+        { label: "Alerts", value: alerts.length, tone: "warning" as const },
         {
           label: "Stable Names",
-          value: scanResult.qualified_trades.filter((trade) => trade.stability_level === "stable").length,
+          value: qualifiedTrades.filter((trade) => trade.stability_level === "stable").length,
           tone: "neutral" as const,
         },
         {
@@ -252,15 +267,16 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
 
 
 export function selectQualifiedBoardModel(scanResult: ScanResult) {
-  const diagnostics = scanResult.diagnostics ?? { missing_tickers: [], provider_errors: [] };
+  const diagnostics = objectOrEmpty(scanResult.diagnostics) as ScanResult["diagnostics"];
+  const qualifiedTrades = arrayOrEmpty(scanResult.qualified_trades);
   const thresholds = currentScanThresholds(scanResult);
   const portfolio = portfolioPosture(scanResult.portfolio_summary);
   const caveats = [
-    (diagnostics.provider_errors ?? []).length > 0
+    arrayOrEmpty(diagnostics.provider_errors).length > 0
       ? "Provider issues were reported in this run, so the ranked board may be incomplete."
       : null,
-    (diagnostics.missing_tickers ?? []).length > 0
-      ? `Missing tickers: ${(diagnostics.missing_tickers ?? []).join(", ")}`
+    arrayOrEmpty(diagnostics.missing_tickers).length > 0
+      ? `Missing tickers: ${arrayOrEmpty(diagnostics.missing_tickers).join(", ")}`
       : null,
     portfolio.topTicker?.share_pct && portfolio.topTicker.share_pct >= 30
       ? `${portfolio.topTicker.ticker} represents ${portfolio.topTicker.share_pct}% of the current qualified set.`
@@ -269,10 +285,10 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
 
   return {
     summary: [
-      { label: "Qualified", value: scanResult.qualified_trades.length, tone: "success" as const },
+      { label: "Qualified", value: qualifiedTrades.length, tone: "success" as const },
       {
         label: "Stable",
-        value: scanResult.qualified_trades.filter((trade) => trade.stability_level === "stable").length,
+        value: qualifiedTrades.filter((trade) => trade.stability_level === "stable").length,
         tone: "neutral" as const,
       },
       {
@@ -287,12 +303,12 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
       },
     ],
     caveats,
-    emptyState: (diagnostics.provider_errors ?? []).length > 0
+    emptyState: arrayOrEmpty(diagnostics.provider_errors).length > 0
       ? {
           title: "Partial results available",
           message: "Provider failures affected this run. Review alerts and diagnostics before concluding there were no qualified setups.",
         }
-      : (diagnostics.missing_tickers ?? []).length > 0 || diagnostics.partial_result
+      : arrayOrEmpty(diagnostics.missing_tickers).length > 0 || diagnostics.partial_result
         ? {
             title: "Partial results available",
             message: "Some tickers were unavailable during the scan, so this empty board may reflect incomplete market coverage.",
@@ -301,7 +317,7 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
             title: "No qualified trades",
             message: "The latest scan did not produce any qualified opportunities. If you want a wider review set, broaden the ticker group or relax the score threshold.",
           },
-    items: scanResult.qualified_trades.map((trade, index) => ({
+    items: qualifiedTrades.map((trade, index) => ({
       id: trade.trade_id ?? `${scanResult.scan_metadata.scan_id}-${index}`,
       href: buildTradeDetailPath(scanResult.scan_metadata.scan_id, trade.trade_id),
       rank: index + 1,
@@ -345,12 +361,16 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
 
 export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail: TradeDetailResponse) {
   const trade = detail.trade;
-  const historyMetadata = scanResult.history_context.historical_intelligence_summary?.metadata ?? {};
-  const recurringPatterns = scanResult.history_context.historical_intelligence_summary?.signal_quality_summary?.recurring_high_quality_patterns ?? [];
+  const historyContext = objectOrEmpty(scanResult.history_context);
+  const historicalIntelligence = (historyContext.historical_intelligence_summary ?? {}) as HistoricalIntelligenceSummary;
+  const historyMetadata: HistoryMetadata = historicalIntelligence.metadata ?? {};
+  const recurringPatterns = arrayOrEmpty(
+    historicalIntelligence.signal_quality_summary?.recurring_high_quality_patterns,
+  );
   const portfolio = portfolioPosture(scanResult.portfolio_summary);
-  const topTickerRows = scanResult.portfolio_summary.exposure?.qualified?.top_ticker_concentration ?? [];
+  const topTickerRows = arrayOrEmpty(scanResult.portfolio_summary.exposure?.qualified?.top_ticker_concentration);
   const matchingTicker = topTickerRows.find((row) => row.ticker === trade.ticker) ?? null;
-  const sizingWarnings = scanResult.portfolio_summary.position_sizing?.warnings ?? [];
+  const sizingWarnings = arrayOrEmpty(scanResult.portfolio_summary.position_sizing?.warnings);
   const explanationRows = Object.entries(trade.score_breakdown ?? {})
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
     .slice(0, 4)
@@ -413,7 +433,7 @@ export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail:
         matchingTicker
           ? `${matchingTicker.ticker} represents ${matchingTicker.share_pct ?? 0}% of the current qualified set.`
           : null,
-        ...scanResult.portfolio_summary.exposure?.notes?.slice(0, 1) ?? [],
+        ...arrayOrEmpty(scanResult.portfolio_summary.exposure?.notes).slice(0, 1),
         ...sizingWarnings.slice(0, 1),
       ].filter(Boolean) as string[],
     },

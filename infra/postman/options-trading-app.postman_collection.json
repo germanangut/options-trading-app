@@ -1,0 +1,388 @@
+{
+  "info": {
+    "name": "Options Trading App API",
+    "description": "Postman collection for the FastAPI backend routes used by the options trading app.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8000"
+    },
+    {
+      "key": "accessToken",
+      "value": ""
+    },
+    {
+      "key": "scanId",
+      "value": ""
+    },
+    {
+      "key": "tradeId",
+      "value": ""
+    },
+    {
+      "key": "requestId",
+      "value": "req-postman-manual"
+    }
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "item": [
+    {
+      "name": "Ops",
+      "item": [
+        {
+          "name": "Health",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/health"
+          }
+        },
+        {
+          "name": "Ready",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/ready"
+          }
+        },
+        {
+          "name": "CORS Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/ops/cors"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "  pm.collectionVariables.set('accessToken', body.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"you@example.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/register"
+          }
+        },
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.access_token) {",
+                  "  pm.collectionVariables.set('accessToken', body.access_token);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"you@example.com\",\n  \"password\": \"Password123!\"\n}"
+            },
+            "url": "{{baseUrl}}/auth/login"
+          }
+        },
+        {
+          "name": "Current User",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/me"
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/auth/logout"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Scans",
+      "item": [
+        {
+          "name": "Run Scan (Legacy)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "if (body.scan_metadata && body.scan_metadata.scan_id) {",
+                  "  pm.collectionVariables.set('scanId', body.scan_metadata.scan_id);",
+                  "}",
+                  "if (body.qualified_trades && body.qualified_trades.length && body.qualified_trades[0].trade_id) {",
+                  "  pm.collectionVariables.set('tradeId', body.qualified_trades[0].trade_id);",
+                  "} else if (body.alerts && body.alerts.length && body.alerts[0].trade_id) {",
+                  "  pm.collectionVariables.set('tradeId', body.alerts[0].trade_id);",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profile\": \"balanced\",\n  \"ticker_group\": \"tech\",\n  \"selected_strategy_keys\": [\"bull_put_spread\", \"bear_call_spread\"],\n  \"dte_min\": 20,\n  \"dte_max\": 35,\n  \"min_score\": 65,\n  \"min_pop\": null,\n  \"min_ror\": null,\n  \"min_consistency\": 3,\n  \"alerts_only\": false,\n  \"use_mock_data\": null\n}"
+            },
+            "url": "{{baseUrl}}/scans"
+          }
+        },
+        {
+          "name": "Latest Scan (Legacy)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/scans/latest"
+          }
+        },
+        {
+          "name": "Run Scan (v1)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"profile\": \"balanced\",\n  \"ticker_group\": \"tech\",\n  \"selected_strategy_keys\": [\"bull_put_spread\", \"bear_call_spread\"],\n  \"dte_min\": 20,\n  \"dte_max\": 35,\n  \"min_score\": 65,\n  \"min_pop\": null,\n  \"min_ror\": null,\n  \"min_consistency\": 3,\n  \"alerts_only\": false,\n  \"use_mock_data\": null\n}"
+            },
+            "url": "{{baseUrl}}/api/v1/scans"
+          }
+        },
+        {
+          "name": "Latest Scan (v1)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/latest"
+          }
+        },
+        {
+          "name": "Get Scan By ID",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/{{scanId}}"
+          }
+        },
+        {
+          "name": "Overview",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/{{scanId}}/overview"
+          }
+        },
+        {
+          "name": "Qualified Trades",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/{{scanId}}/qualified-trades"
+          }
+        },
+        {
+          "name": "Alerts",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/{{scanId}}/alerts"
+          }
+        },
+        {
+          "name": "Daily Summary",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/{{scanId}}/daily-summary"
+          }
+        },
+        {
+          "name": "Portfolio",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/{{scanId}}/portfolio"
+          }
+        },
+        {
+          "name": "History",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/{{scanId}}/history"
+          }
+        },
+        {
+          "name": "Trade Detail",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "X-Request-ID",
+                "value": "{{requestId}}"
+              }
+            ],
+            "url": "{{baseUrl}}/api/v1/scans/{{scanId}}/trades/{{tradeId}}"
+          }
+        }
+      ]
+    }
+  ]
+}

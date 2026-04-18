@@ -198,6 +198,16 @@ PU-14 improves runtime resilience and latency visibility without changing tradin
 - Healthy empty states now explain that no qualified trades or alerts were returned under the current thresholds and suggest broadening the ticker group or relaxing the score floor when appropriate
 - Frontend error messaging distinguishes between authentication failures, provider-side failures, and general platform failures using the existing HTTP status and error detail surface without changing backend contracts
 
+### Stabilization and integration validation
+
+- Authenticated lifecycle coverage now validates the practical review flow of register or login, run scan, fetch latest, review qualified trades, open trade detail, inspect history, and inspect alerts using the live backend contracts
+- Repeated scans are expected to replace only the latest-scan pointer; prior scans remain readable by `scan_id`, and refreshed history should continue to reflect the newest persisted run count
+- Missing latest scan data remains a `404` backend condition and a frontend empty state, not a fatal rendering error
+- Empty qualified or alert lists are valid outcomes when thresholds are strict; they should only be treated as degraded when diagnostics also report `partial_result`, missing tickers, or provider errors
+- Selector and page models now normalize sparse arrays and nested objects so tabs stay render-safe even if a persisted payload is missing optional sections
+- Structured JSON logs are the operational source of truth for request tracing; `request_started`, `scan_started`, `scan_completed`, and `request_completed` events should all be correlatable through the same `request_id`
+- Performance sanity for repeated scans should be interpreted from bounded retry metadata and cache diagnostics rather than wall-clock alone; repeated scans should show cache reuse when eligible and should not exceed the configured retry and total-timeout budgets
+
 ### Performance metrics reference
 
 - Scan-level diagnostics under `diagnostics.performance` include `scan_duration_ms`, `ticker_count`, `processed_ticker_count`, `successful_ticker_count`, `failed_ticker_count`, `provider_duration_ms`, `processing_duration_ms`, and `history_duration_ms`
@@ -235,6 +245,9 @@ streamlit run app.py
 ```bash
 python main.py --profile balanced --group tech --alerts-only
 ```
+
+- `min_consistency` represents the minimum number of historical appearances tracked through `stability_count`, not the scoring bonus.
+- Alerts are evaluated after stability enrichment and use the final `adjusted_score`, which includes volatility and stability contributions.
 
 ### Human-readable daily summary
 
