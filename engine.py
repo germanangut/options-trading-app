@@ -211,6 +211,10 @@ def _merge_ticker_diagnostics(tickers, results, provider_ticker_diagnostics):
                 "provider_status": provider_diag.get("provider_status", "unknown"),
                 "provider": provider_diag.get("provider"),
                 "cache_hit": provider_diag.get("cache_hit", False),
+                "cache_miss": provider_diag.get("cache_miss", False),
+                "provider_call_count": provider_diag.get("provider_call_count"),
+                "provider_duration_ms": provider_diag.get("provider_duration_ms"),
+                "retry_count": provider_diag.get("retry_count", 0),
                 "duration_ms": provider_diag.get("duration_ms"),
                 "provider_diagnostics": {
                     **provider_diagnostics,
@@ -295,6 +299,14 @@ def run_scan_engine(
     selected_strategy_keys = resolve_selected_strategy_keys(selected_strategy_keys)
 
     overall_started_at = time.perf_counter()
+    log_event(
+        logger,
+        "scan_engine_started",
+        profile=effective_profile_name,
+        ticker_group=effective_group_name,
+        ticker_count=len(tickers),
+        selected_strategy_count=len(selected_strategy_keys),
+    )
 
     provider_started_at = time.perf_counter()
     provider_result = get_market_data(
@@ -399,11 +411,16 @@ def run_scan_engine(
     filtered["missing_tickers"] = missing_tickers
     filtered["provider"] = provider_name
     filtered["provider_errors"] = provider_errors
-    filtered["ticker_diagnostics"] = _merge_ticker_diagnostics(
+    merged_ticker_diagnostics = _merge_ticker_diagnostics(
         tickers,
         results,
         provider_ticker_diagnostics,
     )
+    failed_ticker_count = sum(
+        1 for item in merged_ticker_diagnostics if item.get("provider_status") == "error"
+    )
+    successful_ticker_count = max(0, len(merged_ticker_diagnostics) - failed_ticker_count)
+    filtered["ticker_diagnostics"] = merged_ticker_diagnostics
     filtered["partial_result"] = bool(provider_errors or missing_tickers)
     filtered["cache"] = provider_result.get("cache", {})
     filtered["performance"] = {
@@ -412,9 +429,30 @@ def run_scan_engine(
         "processing_duration_ms": processing_duration_ms,
         "scan_duration_ms": round((time.perf_counter() - overall_started_at) * 1000, 2),
         "ticker_count": len(tickers),
+        "processed_ticker_count": len(merged_ticker_diagnostics),
+        "successful_ticker_count": successful_ticker_count,
+        "failed_ticker_count": failed_ticker_count,
         "available_ticker_count": len(available_tickers),
         "missing_ticker_count": len(missing_tickers),
         "provider_error_count": len(provider_errors),
+        "ticker_processing_duration_ms_total": round(
+            sum(
+                float(
+                    ((item.get("provider_diagnostics") or {}).get("processing_duration_ms") or 0.0)
+                )
+                for item in merged_ticker_diagnostics
+            ),
+            2,
+        ),
+        "ticker_provider_duration_ms_total": round(
+            sum(float(item.get("provider_duration_ms") or 0.0) for item in merged_ticker_diagnostics),
+            2,
+        ),
+        "ticker_cache_hit_count": sum(1 for item in merged_ticker_diagnostics if item.get("cache_hit")),
+        "ticker_cache_miss_count": sum(1 for item in merged_ticker_diagnostics if item.get("cache_miss")),
+        "ticker_retry_count_total": sum(
+            int(item.get("retry_count") or 0) for item in merged_ticker_diagnostics
+        ),
         "retry_count": int((provider_result.get("performance", {}) or {}).get("retry_count", 0)),
         "retry_exhausted": bool((provider_result.get("performance", {}) or {}).get("retry_exhausted", False)),
         "retry_exhausted_count": int((provider_result.get("performance", {}) or {}).get("retry_exhausted_count", 0)),
@@ -453,6 +491,8 @@ def run_scan_engine(
         qualified_count=len(filtered.get("qualified", [])),
         alerts_count=len(filtered.get("alerts", [])),
         partial_result=filtered["partial_result"],
+        successful_ticker_count=successful_ticker_count,
+        failed_ticker_count=failed_ticker_count,
         scan_duration_ms=filtered["performance"]["scan_duration_ms"],
         provider_duration_ms=filtered["performance"]["provider_duration_ms"],
         processing_duration_ms=filtered["performance"]["processing_duration_ms"],

@@ -3,7 +3,10 @@ import { Outlet, useLocation } from "react-router-dom";
 import { Banner } from "../../components/ui/Banner";
 import { useLatestScan } from "../../features/scans/hooks/useLatestScan";
 import { useScanActivity } from "../../features/scans/hooks/useScanActivity";
-import { selectScanReliabilityNotice } from "../../features/scans/selectors/scanSelectors";
+import {
+  selectScanPerformanceSummary,
+  selectScanReliabilityNotice,
+} from "../../features/scans/selectors/scanSelectors";
 import { Sidebar } from "./Sidebar";
 import { Topbar } from "./Topbar";
 
@@ -12,6 +15,7 @@ export function AppShell() {
   const latestScan = useLatestScan();
   const scanActivity = useScanActivity();
   const reliabilityNotice = selectScanReliabilityNotice(latestScan.data);
+  const performanceSummary = selectScanPerformanceSummary(latestScan.data);
 
   return (
     <div className="min-h-screen bg-surface-0 text-ink-1">
@@ -33,6 +37,16 @@ export function AppShell() {
                   <div className="space-y-1">
                     <p>{reliabilityNotice.message}</p>
                     {reliabilityNotice.notes.map((note) => (
+                      <p key={note}>{note}</p>
+                    ))}
+                  </div>
+                </Banner>
+              ) : null}
+              {performanceSummary ? (
+                <Banner tone="info" title={performanceSummary.title}>
+                  <div className="space-y-1">
+                    <p>{performanceSummary.message}</p>
+                    {performanceSummary.notes.map((note) => (
                       <p key={note}>{note}</p>
                     ))}
                   </div>

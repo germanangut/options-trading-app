@@ -174,11 +174,34 @@ PU-14 improves runtime resilience and latency visibility without changing tradin
 
 - Structured logs now make scan bottlenecks easier to isolate through:
 	- total scan duration
+	- successful vs failed ticker counts
 	- provider duration
+	- total provider calls
+	- average provider latency
+	- retry backoff latency impact
 	- per-ticker processing duration
+	- per-ticker provider duration
+	- per-ticker cache hit/miss state
+	- per-ticker retry count
 	- persistence duration
+	- estimated cache time saved
 	- cache hit/miss behavior
-- Additive response diagnostics now include non-breaking performance and cache metadata for frontend messaging and operational debugging
+- Additive response diagnostics now include non-breaking scan, provider, ticker, and cache metadata for frontend messaging and operational debugging
+- The frontend surfaces a minimal performance summary using the existing diagnostics contract rather than a separate metrics API
+
+### Performance metrics reference
+
+- Scan-level diagnostics under `diagnostics.performance` include `scan_duration_ms`, `ticker_count`, `processed_ticker_count`, `successful_ticker_count`, `failed_ticker_count`, `provider_duration_ms`, `processing_duration_ms`, and `history_duration_ms`
+- Provider-level diagnostics under `diagnostics.performance` include `total_provider_calls`, `average_provider_latency_ms`, `retry_count`, `retry_exhausted`, `retry_latency_impact_ms`, `cache_hit_rate`, `provider_call_reduction_count`, and `estimated_cache_saved_duration_ms`
+- Per-ticker diagnostics under `ticker_diagnostics[]` include `provider_status`, `provider_duration_ms`, `processing_duration_ms`, `cache_hit`, `cache_miss`, `retry_count`, and provider-specific request metadata
+- Structured logs now standardize scan start and end events, provider call completion and failure, cache usage, retry behavior, and ticker-level processing completion
+
+Interpretation notes:
+- `scan_duration_ms` is the end-to-end engine runtime before durable persistence
+- `provider_duration_ms` is the wall-clock duration of the provider phase, while `total_provider_request_duration_ms` sums the provider request durations used to compute averages
+- `retry_latency_impact_ms` tracks configured backoff delay added by retries; it is a visibility metric, not a full measure of all upstream waiting time
+- `estimated_cache_saved_duration_ms` is best-effort and based on prior observed request durations for reusable cache entries
+- `successful_ticker_count` counts tickers that completed without a provider error, even if a ticker later had no tradable contracts
 
 ### Known limitations deferred beyond PU-14
 
@@ -187,6 +210,7 @@ PU-14 improves runtime resilience and latency visibility without changing tradin
 - no circuit breaker or provider failover beyond bounded retries and graceful degradation
 - no background scan queue, concurrency shaping, or job orchestration for large burst traffic
 - no dedicated metrics backend or tracing export; visibility remains log-first
+- persistence duration is captured in structured completion logs; the canonical stored ScanResult keeps only timings known before persistence so latest-scan reads stay consistent with persisted payloads
 - no stale-while-revalidate strategy or proactive refresh of cached provider reads
 
 ## Common usage patterns
@@ -298,8 +322,11 @@ PU-12 adds lightweight operational hardening for the FastAPI backend without cha
 - `request_completed`
 - `request_failed`
 - `scan_started`
+- `scan_engine_started`
 - `scan_completed`
 - `scan_failed`
+- `scan_ticker_completed`
+- `scan_ticker_failed`
 - `persistence_read`
 - `persistence_write`
 - `auth_login_success`
@@ -308,6 +335,8 @@ PU-12 adds lightweight operational hardening for the FastAPI backend without cha
 - `provider_request_started`
 - `provider_request_completed`
 - `provider_request_failed`
+- `provider_cache_used`
+- `provider_retry_scheduled`
 - security-adjacent events such as `token_validation_failed` and `unauthorized_access_attempt`
 
 ### Error handling

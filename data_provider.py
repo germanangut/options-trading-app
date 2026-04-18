@@ -53,6 +53,7 @@ class ProviderRequestError(RuntimeError):
         status_code: int | None = None,
         retry_count: int = 0,
         retry_exhausted: bool = False,
+        retry_delay_ms: float = 0.0,
     ):
         super().__init__(message)
         self.category = category
@@ -60,6 +61,7 @@ class ProviderRequestError(RuntimeError):
         self.status_code = status_code
         self.retry_count = retry_count
         self.retry_exhausted = retry_exhausted
+        self.retry_delay_ms = retry_delay_ms
 
 
 def _provider_runtime_settings() -> dict[str, float | int]:
@@ -437,6 +439,7 @@ def _request_provider_json(
                 return cache_lookup_metadata["value"], {
                     **cache_lookup_metadata,
                     "attempt_count": 0,
+                    "provider_call_count": 0,
                     "retry_count": 0,
                     "retry_exhausted": False,
                     "retry_delay_ms": 0.0,
@@ -593,6 +596,7 @@ def _request_provider_json(
                             "cache_lookup_duration_ms": None,
                             "estimated_saved_duration_ms": 0.0,
                             "attempt_count": attempt,
+                            "provider_call_count": attempt,
                             "retry_count": retry_count,
                             "retry_exhausted": False,
                             "retry_delay_ms": round(total_retry_delay_seconds * 1000, 2),
@@ -657,6 +661,7 @@ def _request_provider_json(
     retry_exhausted = bool(last_error.transient and (final_attempt_count >= max_attempts or budget_exhausted))
     last_error.retry_count = retry_count
     last_error.retry_exhausted = retry_exhausted
+    last_error.retry_delay_ms = round(total_retry_delay_seconds * 1000, 2)
 
     log_event(
         logger,
@@ -905,6 +910,9 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
     ticker_diagnostics = []
     total_retry_count = 0
     retry_exhausted_count = 0
+    total_provider_calls = 0
+    total_provider_request_duration_ms = 0.0
+    total_retry_delay_ms = 0.0
     cache_summary = {
         "ticker_data": {"hits": 0, "misses": 0, "memory_hits": 0, "file_hits": 0},
         "contracts": {"hits": 0, "misses": 0},
@@ -947,6 +955,10 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                         "provider_status": "ok",
                         "provider": "alpaca",
                         "cache_hit": True,
+                        "cache_miss": False,
+                        "provider_call_count": 0,
+                        "provider_duration_ms": 0.0,
+                        "retry_count": 0,
                         "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
                         "provider_diagnostics": {
                             **dict(normalized.get("provider_diagnostics") or {}),
@@ -976,6 +988,10 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                 dte_min=dte_min,
                 dte_max=dte_max,
             )
+            ticker_provider_call_count = int(discovered["request_metadata"].get("provider_call_count", 0))
+            ticker_provider_duration_ms = float(discovered["request_metadata"].get("duration_ms", 0.0) or 0.0)
+            ticker_retry_count = int(discovered["request_metadata"].get("retry_count", 0))
+            ticker_retry_delay_ms = float(discovered["request_metadata"].get("retry_delay_ms", 0.0) or 0.0)
             cache_summary["contracts"]["hits" if discovered["request_metadata"].get("cache_hit") else "misses"] += 1
             if discovered["request_metadata"].get("cache_hit"):
                 estimated_cache_saved_duration_ms += float(
@@ -983,6 +999,9 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                 )
             total_retry_count += int(discovered["request_metadata"].get("retry_count", 0))
             retry_exhausted_count += int(bool(discovered["request_metadata"].get("retry_exhausted", False)))
+            total_provider_calls += int(discovered["request_metadata"].get("provider_call_count", 0))
+            total_provider_request_duration_ms += float(discovered["request_metadata"].get("duration_ms", 0.0) or 0.0)
+            total_retry_delay_ms += float(discovered["request_metadata"].get("retry_delay_ms", 0.0) or 0.0)
 
             if not discovered["contracts"]:
                 missing_tickers.append(ticker)
@@ -992,6 +1011,10 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                         "provider_status": "missing",
                         "provider": "alpaca",
                         "cache_hit": bool(discovered["request_metadata"].get("cache_hit")),
+                        "cache_miss": bool(discovered["request_metadata"].get("cache_miss", not discovered["request_metadata"].get("cache_hit"))),
+                        "provider_call_count": ticker_provider_call_count,
+                        "provider_duration_ms": round(ticker_provider_duration_ms, 2),
+                        "retry_count": ticker_retry_count,
                         "provider_diagnostics": {
                             "ticker": ticker,
                             "chosen_expiration": discovered.get("chosen_expiration"),
@@ -1001,6 +1024,7 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                             "request_attempts": discovered["request_metadata"].get("attempt_count", 0),
                             "retry_count": discovered["request_metadata"].get("retry_count", 0),
                             "retry_exhausted": discovered["request_metadata"].get("retry_exhausted", False),
+                            "retry_delay_ms": ticker_retry_delay_ms,
                         },
                         "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
                     }
@@ -1018,6 +1042,10 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
 
             option_symbols = [contract["symbol"] for contract in discovered["contracts"]]
             option_snapshots = fetch_option_snapshots_for_symbols(option_symbols)
+            ticker_provider_call_count += int(option_snapshots["request_metadata"].get("provider_call_count", 0))
+            ticker_provider_duration_ms += float(option_snapshots["request_metadata"].get("duration_ms", 0.0) or 0.0)
+            ticker_retry_count += int(option_snapshots["request_metadata"].get("retry_count", 0))
+            ticker_retry_delay_ms += float(option_snapshots["request_metadata"].get("retry_delay_ms", 0.0) or 0.0)
             cache_summary["snapshots"]["hits"] += option_snapshots["request_metadata"].get("cache_hits", 0)
             cache_summary["snapshots"]["misses"] += option_snapshots["request_metadata"].get("cache_misses", 0)
             estimated_cache_saved_duration_ms += float(
@@ -1025,7 +1053,14 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             )
             total_retry_count += int(option_snapshots["request_metadata"].get("retry_count", 0))
             retry_exhausted_count += int(option_snapshots["request_metadata"].get("retry_exhausted_count", 0))
+            total_provider_calls += int(option_snapshots["request_metadata"].get("provider_call_count", 0))
+            total_provider_request_duration_ms += float(option_snapshots["request_metadata"].get("duration_ms", 0.0) or 0.0)
+            total_retry_delay_ms += float(option_snapshots["request_metadata"].get("retry_delay_ms", 0.0) or 0.0)
             underlying_trade = fetch_underlying_stock_trade(ticker)
+            ticker_provider_call_count += int(underlying_trade["request_metadata"].get("provider_call_count", 0))
+            ticker_provider_duration_ms += float(underlying_trade["request_metadata"].get("duration_ms", 0.0) or 0.0)
+            ticker_retry_count += int(underlying_trade["request_metadata"].get("retry_count", 0))
+            ticker_retry_delay_ms += float(underlying_trade["request_metadata"].get("retry_delay_ms", 0.0) or 0.0)
             cache_summary["underlying"]["hits" if underlying_trade["request_metadata"].get("cache_hit") else "misses"] += 1
             if underlying_trade["request_metadata"].get("cache_hit"):
                 estimated_cache_saved_duration_ms += float(
@@ -1033,6 +1068,9 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                 )
             total_retry_count += int(underlying_trade["request_metadata"].get("retry_count", 0))
             retry_exhausted_count += int(bool(underlying_trade["request_metadata"].get("retry_exhausted", False)))
+            total_provider_calls += int(underlying_trade["request_metadata"].get("provider_call_count", 0))
+            total_provider_request_duration_ms += float(underlying_trade["request_metadata"].get("duration_ms", 0.0) or 0.0)
+            total_retry_delay_ms += float(underlying_trade["request_metadata"].get("retry_delay_ms", 0.0) or 0.0)
 
             normalized = normalize_discovered_contracts(
                         ticker=ticker,
@@ -1067,6 +1105,10 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                         "provider_status": "missing",
                         "provider": "alpaca",
                         "cache_hit": bool(discovered["request_metadata"].get("cache_hit")),
+                        "cache_miss": bool(discovered["request_metadata"].get("cache_miss", not discovered["request_metadata"].get("cache_hit"))),
+                        "provider_call_count": ticker_provider_call_count,
+                        "provider_duration_ms": round(ticker_provider_duration_ms, 2),
+                        "retry_count": ticker_retry_count,
                         "provider_diagnostics": (normalized or {}).get("provider_diagnostics", {}),
                         "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
                     }
@@ -1108,8 +1150,17 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                     "provider": "alpaca",
                     "cache_hit": bool(
                         discovered["request_metadata"].get("cache_hit")
-                        and underlying_trade["request_metadata"].get("cache_hit")
+                        or option_snapshots["request_metadata"].get("cache_hits", 0) > 0
+                        or underlying_trade["request_metadata"].get("cache_hit")
                     ),
+                    "cache_miss": bool(
+                        discovered["request_metadata"].get("cache_miss", not discovered["request_metadata"].get("cache_hit"))
+                        or option_snapshots["request_metadata"].get("cache_misses", 0) > 0
+                        or underlying_trade["request_metadata"].get("cache_miss", not underlying_trade["request_metadata"].get("cache_hit"))
+                    ),
+                    "provider_call_count": ticker_provider_call_count,
+                    "provider_duration_ms": round(ticker_provider_duration_ms, 2),
+                    "retry_count": ticker_retry_count,
                     "provider_diagnostics": normalized["provider_diagnostics"],
                     "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
                 }
@@ -1139,21 +1190,28 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                     "status_code": getattr(exc, "status_code", None),
                     "retry_count": getattr(exc, "retry_count", 0),
                     "retry_exhausted": getattr(exc, "retry_exhausted", False),
+                    "retry_delay_ms": getattr(exc, "retry_delay_ms", 0.0),
                 }
             )
             total_retry_count += int(getattr(exc, "retry_count", 0))
             retry_exhausted_count += int(bool(getattr(exc, "retry_exhausted", False)))
+            total_retry_delay_ms += float(getattr(exc, "retry_delay_ms", 0.0) or 0.0)
             ticker_diagnostics.append(
                 {
                     "ticker": ticker,
                     "provider_status": "error",
                     "provider": "alpaca",
                     "cache_hit": False,
+                    "cache_miss": True,
+                    "provider_call_count": None,
+                    "provider_duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
+                    "retry_count": getattr(exc, "retry_count", 0),
                     "provider_diagnostics": {
                         "ticker": ticker,
                         "reason": str(exc),
                         "retry_count": getattr(exc, "retry_count", 0),
                         "retry_exhausted": getattr(exc, "retry_exhausted", False),
+                        "retry_delay_ms": getattr(exc, "retry_delay_ms", 0.0),
                     },
                     "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
                 }
@@ -1179,6 +1237,13 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             "retry_count": total_retry_count,
             "retry_exhausted": retry_exhausted_count > 0,
             "retry_exhausted_count": retry_exhausted_count,
+            "total_provider_calls": total_provider_calls,
+            "total_provider_request_duration_ms": round(total_provider_request_duration_ms, 2),
+            "average_provider_latency_ms": round(
+                total_provider_request_duration_ms / max(total_provider_calls, 1),
+                2,
+            ) if total_provider_calls else 0.0,
+            "retry_latency_impact_ms": round(total_retry_delay_ms, 2),
             "cache_hit_rate": round(
                 (
                     cache_summary["ticker_data"]["hits"]
@@ -1346,6 +1411,10 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
                 "cache_misses": 0,
                 "chunk_count": 0,
                 "attempt_count": 0,
+                "provider_call_count": 0,
+                "duration_ms": 0.0,
+                "retry_delay_ms": 0.0,
+                "estimated_saved_duration_ms": 0.0,
                 "errors": [],
             },
         }
@@ -1356,6 +1425,9 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
     total_attempts = 0
     total_retry_count = 0
     retry_exhausted_count = 0
+    total_duration_ms = 0.0
+    total_retry_delay_ms = 0.0
+    estimated_saved_duration_ms = 0.0
     errors = []
 
     for symbol_chunk in chunk_list(option_symbols, chunk_size):
@@ -1380,10 +1452,12 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
                     "status_code": exc.status_code,
                     "retry_count": exc.retry_count,
                     "retry_exhausted": exc.retry_exhausted,
+                    "retry_delay_ms": exc.retry_delay_ms,
                 }
             )
             total_retry_count += int(exc.retry_count)
             retry_exhausted_count += int(bool(exc.retry_exhausted))
+            total_retry_delay_ms += float(exc.retry_delay_ms or 0.0)
             continue
 
         cache_hits += 1 if request_metadata.get("cache_hit") else 0
@@ -1391,6 +1465,11 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
         total_attempts += int(request_metadata.get("attempt_count", 0))
         total_retry_count += int(request_metadata.get("retry_count", 0))
         retry_exhausted_count += int(bool(request_metadata.get("retry_exhausted", False)))
+        total_duration_ms += float(request_metadata.get("duration_ms", 0.0) or 0.0)
+        total_retry_delay_ms += float(request_metadata.get("retry_delay_ms", 0.0) or 0.0)
+        estimated_saved_duration_ms += float(
+            request_metadata.get("estimated_saved_duration_ms", 0.0) or 0.0
+        )
 
         chunk_snapshots = {}
         for key in ["snapshots", "data"]:
@@ -1408,9 +1487,13 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
             "cache_misses": cache_misses,
             "chunk_count": len(list(chunk_list(option_symbols, chunk_size))),
             "attempt_count": total_attempts,
+            "provider_call_count": total_attempts,
+            "duration_ms": round(total_duration_ms, 2),
             "retry_count": total_retry_count,
             "retry_exhausted": retry_exhausted_count > 0,
             "retry_exhausted_count": retry_exhausted_count,
+            "retry_delay_ms": round(total_retry_delay_ms, 2),
+            "estimated_saved_duration_ms": round(estimated_saved_duration_ms, 2),
             "errors": errors,
         },
     }

@@ -63,6 +63,10 @@ def test_run_scan_matches_current_engine_core_semantics(monkeypatch):
         assert len(scan_result["alerts"]) == len(raw_output["alerts"])
         assert scan_result["diagnostics"]["missing_tickers"] == raw_output["missing_tickers"]
         assert scan_result["diagnostics"]["provider_errors"] == raw_output["provider_errors"]
+        assert "performance" in scan_result["diagnostics"]
+        assert scan_result["diagnostics"]["performance"]["scan_duration_ms"] >= 0
+        assert scan_result["diagnostics"]["performance"]["provider_duration_ms"] >= 0
+        assert scan_result["diagnostics"]["performance"]["history_duration_ms"] >= 0
 
         portfolio_summary = scan_result["portfolio_summary"]
         assert portfolio_summary["exposure"] == raw_output["portfolio_exposure_summary"]
@@ -84,6 +88,7 @@ def test_run_scan_matches_current_engine_core_semantics(monkeypatch):
         assert stored_scan["scan_metadata"]["scan_id"] == scan_id
         assert stored_scan["summary"] == scan_result["summary"]
         assert stored_scan["daily_summary"] == scan_result["daily_summary"]
+        assert stored_scan["diagnostics"]["performance"] == scan_result["diagnostics"]["performance"]
 
         if scan_result["qualified_trades"]:
             rerun_scan = run_scan(request)

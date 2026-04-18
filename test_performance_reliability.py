@@ -44,6 +44,10 @@ def test_run_scan_engine_keeps_successful_tickers_when_one_provider_result_fails
                 "provider_status": "ok",
                 "provider": "alpaca",
                 "cache_hit": False,
+                "cache_miss": True,
+                "provider_call_count": 3,
+                "provider_duration_ms": 75.5,
+                "retry_count": 1,
                 "duration_ms": 75.5,
                 "provider_diagnostics": {"ticker": "QQQ", "valid_contract_count": 8},
             },
@@ -52,6 +56,10 @@ def test_run_scan_engine_keeps_successful_tickers_when_one_provider_result_fails
                 "provider_status": "error",
                 "provider": "alpaca",
                 "cache_hit": False,
+                "cache_miss": True,
+                "provider_call_count": 2,
+                "provider_duration_ms": 120.0,
+                "retry_count": 2,
                 "duration_ms": 120.0,
                 "provider_diagnostics": {"ticker": "BROKEN", "reason": "Provider request timed out."},
             },
@@ -62,7 +70,13 @@ def test_run_scan_engine_keeps_successful_tickers_when_one_provider_result_fails
             "snapshots": {"hits": 0, "misses": 1},
             "underlying": {"hits": 0, "misses": 1},
         },
-        "performance": {"provider_duration_ms": 180.0},
+        "performance": {
+            "provider_duration_ms": 180.0,
+            "total_provider_calls": 5,
+            "average_provider_latency_ms": 36.0,
+            "retry_latency_impact_ms": 150.0,
+            "estimated_cache_saved_duration_ms": 0.0,
+        },
     }
 
     monkeypatch.setattr("engine.get_market_data", lambda *args, **kwargs: provider_result)
@@ -81,6 +95,12 @@ def test_run_scan_engine_keeps_successful_tickers_when_one_provider_result_fails
     broken = next(item for item in result["ticker_diagnostics"] if item["ticker"] == "BROKEN")
     assert broken["provider_status"] == "error"
     assert broken["provider_diagnostics"]["reason"] == "Provider request timed out."
+    assert result["performance"]["processed_ticker_count"] == 2
+    assert result["performance"]["successful_ticker_count"] == 1
+    assert result["performance"]["failed_ticker_count"] == 1
+    assert result["performance"]["total_provider_calls"] == 5
+    assert result["performance"]["ticker_retry_count_total"] == 3
+    assert result["performance"]["ticker_cache_miss_count"] == 2
 
 
 def test_discover_contracts_retries_after_timeout(monkeypatch):
@@ -307,7 +327,15 @@ def test_get_alpaca_market_data_reuses_ticker_provider_cache(monkeypatch):
             "contracts": [{"symbol": "SPY250117P00450000"}],
             "chosen_expiration": "2030-01-17",
             "chosen_dte": 30,
-            "request_metadata": {"cache_hit": False, "retry_count": 0, "retry_exhausted": False},
+            "request_metadata": {
+                "cache_hit": False,
+                "cache_miss": True,
+                "provider_call_count": 1,
+                "duration_ms": 40.0,
+                "retry_count": 0,
+                "retry_exhausted": False,
+                "retry_delay_ms": 0.0,
+            },
         }
 
     def fake_snapshots(*args, **kwargs):
@@ -317,8 +345,11 @@ def test_get_alpaca_market_data_reuses_ticker_provider_cache(monkeypatch):
             "request_metadata": {
                 "cache_hits": 0,
                 "cache_misses": 1,
+                "provider_call_count": 1,
+                "duration_ms": 25.0,
                 "retry_count": 0,
                 "retry_exhausted_count": 0,
+                "retry_delay_ms": 0.0,
                 "estimated_saved_duration_ms": 0.0,
             },
         }
@@ -329,8 +360,12 @@ def test_get_alpaca_market_data_reuses_ticker_provider_cache(monkeypatch):
             "trade": {"p": 501.0},
             "request_metadata": {
                 "cache_hit": False,
+                "cache_miss": True,
+                "provider_call_count": 1,
+                "duration_ms": 15.0,
                 "retry_count": 0,
                 "retry_exhausted": False,
+                "retry_delay_ms": 0.0,
                 "estimated_saved_duration_ms": 0.0,
             },
         }
@@ -357,6 +392,11 @@ def test_get_alpaca_market_data_reuses_ticker_provider_cache(monkeypatch):
         assert call_counts == {"discover": 1, "snapshots": 1, "underlying": 1, "normalize": 1}
         assert first["cache"]["ticker_data"]["misses"] == 1
         assert second["cache"]["ticker_data"]["hits"] == 1
+        assert first["performance"]["total_provider_calls"] == 3
+        assert first["performance"]["average_provider_latency_ms"] == pytest.approx(26.67, abs=0.01)
+        assert first["ticker_diagnostics"][0]["provider_duration_ms"] == pytest.approx(80.0, abs=0.01)
+        assert second["ticker_diagnostics"][0]["cache_hit"] is True
+        assert second["ticker_diagnostics"][0]["provider_duration_ms"] == 0.0
         assert second["performance"]["provider_call_reduction_count"] >= 1
     finally:
         data_provider._clear_in_memory_cache()

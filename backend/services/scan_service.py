@@ -38,6 +38,7 @@ def run_scan(
         user_id=user_id,
         profile=request.profile,
         ticker_group=request.ticker_group,
+        selected_strategy_count=len(selected_strategy_keys or []),
     )
 
     try:
@@ -63,6 +64,9 @@ def run_scan(
             ),
         }
         history_duration_ms = round((time.perf_counter() - history_started_at) * 1000, 2)
+        diagnostics = scan_result.setdefault("diagnostics", {})
+        performance = diagnostics.setdefault("performance", {})
+        performance["history_duration_ms"] = history_duration_ms
 
         persistence_started_at = time.perf_counter()
         persisted = save_scan_result(scan_result, user_id=user_id)

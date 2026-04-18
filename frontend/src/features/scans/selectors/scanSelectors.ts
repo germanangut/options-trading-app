@@ -68,6 +68,56 @@ export function selectScanReliabilityNotice(scanResult?: ScanResult | null) {
   return null;
 }
 
+export function selectScanPerformanceSummary(scanResult?: ScanResult | null) {
+  if (!scanResult) {
+    return null;
+  }
+
+  const diagnostics = scanDiagnostics(scanResult);
+  const performance = diagnostics.performance ?? {};
+  const scanDurationMs = Number(performance.scan_duration_ms ?? NaN);
+  const successfulTickerCount = Number(performance.successful_ticker_count ?? NaN);
+  const failedTickerCount = Number(performance.failed_ticker_count ?? NaN);
+  const totalProviderCalls = Number(performance.total_provider_calls ?? NaN);
+  const averageProviderLatencyMs = Number(performance.average_provider_latency_ms ?? NaN);
+  const retryLatencyImpactMs = Number(performance.retry_latency_impact_ms ?? NaN);
+  const estimatedCacheSavedDurationMs = Number(
+    performance.estimated_cache_saved_duration_ms ?? NaN,
+  );
+
+  if (
+    !Number.isFinite(scanDurationMs)
+    && !Number.isFinite(successfulTickerCount)
+    && !Number.isFinite(failedTickerCount)
+  ) {
+    return null;
+  }
+
+  return {
+    title: "Performance summary",
+    message: Number.isFinite(scanDurationMs)
+      ? `Latest scan completed in ${(scanDurationMs / 1000).toFixed(2)}s.`
+      : "Latest scan performance metrics are available.",
+    notes: [
+      Number.isFinite(successfulTickerCount) && Number.isFinite(failedTickerCount)
+        ? `Tickers processed successfully: ${successfulTickerCount}. Failed: ${failedTickerCount}.`
+        : null,
+      Number.isFinite(totalProviderCalls)
+        ? `Provider calls issued: ${totalProviderCalls}.`
+        : null,
+      Number.isFinite(averageProviderLatencyMs)
+        ? `Average provider latency: ${averageProviderLatencyMs.toFixed(2)}ms.`
+        : null,
+      Number.isFinite(retryLatencyImpactMs) && retryLatencyImpactMs > 0
+        ? `Retry backoff added ${retryLatencyImpactMs.toFixed(2)}ms.`
+        : null,
+      Number.isFinite(estimatedCacheSavedDurationMs) && estimatedCacheSavedDurationMs > 0
+        ? `Cache reuse saved an estimated ${estimatedCacheSavedDurationMs.toFixed(2)}ms.`
+        : null,
+    ].filter(Boolean) as string[],
+  };
+}
+
 function fallbackScore(trade: Pick<QualifiedTradeRow, "adjusted_score" | "score">) {
   return trade.adjusted_score ?? trade.score ?? null;
 }
