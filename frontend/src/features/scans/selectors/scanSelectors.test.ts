@@ -148,4 +148,86 @@ describe("selectScanPerformanceSummary", () => {
     expect(portfolio.positions).toEqual([]);
     expect(portfolio.summaryCards[0].value).toBe(0);
   });
+
+  it("falls back to canonical scan sections when daily summary and portfolio sections are sparse", () => {
+    const scanResult = buildScanResult();
+    scanResult.summary = {
+      qualified_count: 2,
+      near_miss_count: 1,
+      top_overall: {
+        trade_id: "trade_aapl",
+        ticker: "AAPL",
+        strategy_type: "bull_put_spread",
+        strategy_key: "bull_put_spread",
+        strategy_label: "Bull Put Spread",
+        directional_bias: "bullish",
+        expiration_date: "2026-05-15",
+        DTE: 28,
+        short_strike: 180,
+        long_strike: 175,
+        POP: 67,
+        ROR: 22,
+        score: 72,
+        adjusted_score: 74,
+        label: "High Quality",
+        decision_summary: "AAPL remains actionable.",
+        status_reason: "AAPL cleared the current thresholds.",
+        volatility_context: "balanced_premium",
+        stability_level: "stable",
+        stability_count: 3,
+      },
+    };
+    scanResult.alerts = [
+      {
+        trade_id: "trade_aapl",
+        ticker: "AAPL",
+        strategy_type: "bull_put_spread",
+        strategy_key: "bull_put_spread",
+        strategy_label: "Bull Put Spread",
+        directional_bias: "bullish",
+        expiration_date: "2026-05-15",
+        DTE: 28,
+        short_strike: 180,
+        long_strike: 175,
+        POP: 67,
+        ROR: 22,
+        score: 72,
+        adjusted_score: 74,
+        label: "High Quality",
+        decision_summary: "AAPL remains actionable.",
+        status_reason: "AAPL cleared the current thresholds.",
+        volatility_context: "balanced_premium",
+        stability_level: "stable",
+        stability_count: 3,
+      },
+    ];
+    scanResult.daily_summary = {};
+    scanResult.portfolio_summary = {};
+
+    const dailySummary = selectDailySummaryModel(scanResult);
+    const portfolio = selectPortfolioModel(scanResult);
+
+    expect(dailySummary.headline).toEqual({
+      profile: "balanced",
+      tickerGroup: "tech",
+      qualifiedCount: 2,
+      nearMissCount: 1,
+      alertsCount: 1,
+      executionTimeSeconds: 1.42,
+    });
+    expect(dailySummary.topOpportunity?.trade_id).toBe("trade_aapl");
+    expect(portfolio.summaryCards[0].value).toBe(2);
+  });
+
+  it("keeps partial empty-state messaging stable when failed ticker counts are missing", () => {
+    const scanResult = buildScanResult();
+    scanResult.diagnostics.partial_result = true;
+    scanResult.diagnostics.performance = {};
+
+    const alerts = selectAlertsModel(scanResult);
+
+    expect(alerts.failedTickerCount).toBe(1);
+    expect(alerts.partialNotice?.title).toBe("Partial results available");
+    expect(alerts.emptyState.title).toBe("No alerts under partial coverage");
+  });
 });

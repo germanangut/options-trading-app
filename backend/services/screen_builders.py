@@ -478,13 +478,17 @@ def build_portfolio_screen_payload(scan_result: dict[str, Any]) -> dict[str, Any
     position_sizing = portfolio_summary.get("position_sizing") or {}
     overlap = portfolio_summary.get("overlap") or {}
     decision = portfolio_summary.get("decision") or {}
+    summary = scan_result.get("summary") or {}
 
     return {
         "scan_id": (scan_result.get("scan_metadata") or {}).get("scan_id"),
         "summary_cards": [
             {
                 "label": "Qualified Trades",
-                "value": ((exposure.get("metadata") or {}).get("qualified_trade_count", 0)),
+                "value": ((exposure.get("metadata") or {}).get(
+                    "qualified_trade_count",
+                    summary.get("qualified_count", 0),
+                )),
             },
             {
                 "label": "Fits Budget",
@@ -513,18 +517,30 @@ def build_portfolio_screen_payload(scan_result: dict[str, Any]) -> dict[str, Any
 
 def build_daily_summary_payload(scan_result: dict[str, Any]) -> dict[str, Any]:
     daily_summary = scan_result.get("daily_summary") or {}
+    summary = scan_result.get("summary") or {}
+    metadata = scan_result.get("scan_metadata") or {}
+    alerts = scan_result.get("alerts") or []
 
     return {
         "scan_id": (scan_result.get("scan_metadata") or {}).get("scan_id"),
         "headline": {
-            "profile": daily_summary.get("profile"),
-            "ticker_group": daily_summary.get("ticker_group"),
-            "execution_time_seconds": daily_summary.get("execution_time_seconds"),
-            "qualified_count": daily_summary.get("qualified_count"),
-            "near_miss_count": daily_summary.get("near_miss_count"),
-            "alerts_count": daily_summary.get("alerts_count"),
+            "profile": daily_summary.get("profile", metadata.get("profile")),
+            "ticker_group": daily_summary.get("ticker_group", metadata.get("ticker_group")),
+            "execution_time_seconds": daily_summary.get(
+                "execution_time_seconds",
+                metadata.get("execution_time_seconds"),
+            ),
+            "qualified_count": daily_summary.get(
+                "qualified_count",
+                summary.get("qualified_count", 0),
+            ),
+            "near_miss_count": daily_summary.get(
+                "near_miss_count",
+                summary.get("near_miss_count", 0),
+            ),
+            "alerts_count": daily_summary.get("alerts_count", len(alerts)),
         },
-        "top_opportunity": daily_summary.get("top_overall"),
+        "top_opportunity": daily_summary.get("top_overall", summary.get("top_overall")),
         "alert_signals": [
             {"label": "Stable Alerts", "value": daily_summary.get("stable_alert_count", 0)},
             {"label": "Emerging Alerts", "value": daily_summary.get("emerging_alert_count", 0)},

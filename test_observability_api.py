@@ -80,6 +80,29 @@ def test_ready_endpoint_reports_dependency_status(monkeypatch):
         shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
 
 
+def test_ready_endpoint_reports_live_provider_mode_when_credentials_exist(monkeypatch):
+    workspace_tmp_dir = Path("tmp_test_observability_api") / str(uuid.uuid4())
+    workspace_tmp_dir.mkdir(parents=True, exist_ok=True)
+    _force_mock_mode(monkeypatch, workspace_tmp_dir)
+    clear_scan_store()
+    get_auth_repository().clear()
+    monkeypatch.setattr(data_provider, "ALPACA_API_KEY", "live-key")
+    monkeypatch.setattr(data_provider, "ALPACA_API_SECRET", "live-secret")
+
+    try:
+        client = TestClient(app)
+        response = client.get("/ready")
+        assert response.status_code == 200
+        body = response.json()
+        assert body["checks"]["provider"] == {
+            "status": "ok",
+            "mode": "live",
+            "configured": True,
+        }
+    finally:
+        shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
+
+
 def test_ops_cors_endpoint_reports_effective_configuration(monkeypatch):
     workspace_tmp_dir = Path("tmp_test_observability_api") / str(uuid.uuid4())
     workspace_tmp_dir.mkdir(parents=True, exist_ok=True)
