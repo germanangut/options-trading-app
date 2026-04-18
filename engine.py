@@ -415,6 +415,9 @@ def run_scan_engine(
         "available_ticker_count": len(available_tickers),
         "missing_ticker_count": len(missing_tickers),
         "provider_error_count": len(provider_errors),
+        "retry_count": int((provider_result.get("performance", {}) or {}).get("retry_count", 0)),
+        "retry_exhausted": bool((provider_result.get("performance", {}) or {}).get("retry_exhausted", False)),
+        "retry_exhausted_count": int((provider_result.get("performance", {}) or {}).get("retry_exhausted_count", 0)),
     }
     filtered["execution_time_seconds"] = round((time.perf_counter() - overall_started_at), 2)
     filtered["profile"] = effective_profile_name

@@ -29,6 +29,8 @@ export function selectScanReliabilityNotice(scanResult?: ScanResult | null) {
   const performance = diagnostics.performance ?? {};
   const cache = diagnostics.cache ?? {};
   const providerDurationMs = Number(performance.provider_duration_ms ?? NaN);
+  const retryCount = Number(performance.retry_count ?? 0);
+  const retryExhausted = Boolean(performance.retry_exhausted);
   const providerDurationNote = Number.isFinite(providerDurationMs)
     ? `Provider phase completed in ${(providerDurationMs / 1000).toFixed(2)}s.`
     : null;
@@ -41,6 +43,8 @@ export function selectScanReliabilityNotice(scanResult?: ScanResult | null) {
       message: "Some tickers failed during provider retrieval. Successful results remain usable, but coverage is incomplete.",
       notes: [
         `Provider errors: ${providerErrors.length}`,
+        retryCount > 0 ? `Retries attempted: ${retryCount}` : null,
+        retryExhausted ? "Some provider requests exhausted their retry budget." : null,
         providerDurationNote,
         aggregateCacheHit ? "This response reused short-lived cached market data." : null,
       ].filter(Boolean) as string[],
@@ -54,6 +58,7 @@ export function selectScanReliabilityNotice(scanResult?: ScanResult | null) {
       message: `${missingTickers.length} ticker(s) were unavailable during the latest scan, so empty boards may reflect degraded coverage rather than zero opportunities.`,
       notes: [
         missingTickers.length > 0 ? `Missing: ${missingTickers.join(", ")}` : null,
+        retryCount > 0 ? `Retries attempted: ${retryCount}` : null,
         providerDurationNote,
         aggregateCacheHit ? "This response reused short-lived cached market data." : null,
       ].filter(Boolean) as string[],

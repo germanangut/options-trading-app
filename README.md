@@ -121,8 +121,11 @@ SCAN_DATABASE_PATH=.history/scan_store.sqlite
 AUTH_SESSION_TTL_HOURS=168
 MARKET_DATA_CACHE_TTL_SECONDS=60
 PROVIDER_TIMEOUT_SECONDS=12
+PROVIDER_TOTAL_TIMEOUT_SECONDS=20
 PROVIDER_RETRY_COUNT=2
 PROVIDER_RETRY_BACKOFF_SECONDS=0.35
+PROVIDER_RETRY_STRATEGY=exponential
+PROVIDER_RETRY_MAX_BACKOFF_SECONDS=1.5
 PROVIDER_CONTRACTS_CACHE_TTL_SECONDS=120
 PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS=45
 PROVIDER_UNDERLYING_CACHE_TTL_SECONDS=15
@@ -136,9 +139,12 @@ PU-14 improves runtime resilience and latency visibility without changing tradin
 
 - Provider HTTP operations use bounded retries only for transient conditions such as timeouts, connection failures, and retryable upstream HTTP responses like `408`, `429`, `500`, `502`, `503`, and `504`
 - Default retry count is small: `2` retries beyond the initial attempt
-- Retries are timeout-aware and preserve the per-request timeout budget per attempt through `PROVIDER_TIMEOUT_SECONDS`
+- Retries are timeout-aware and preserve both a per-attempt timeout through `PROVIDER_TIMEOUT_SECONDS` and an overall retry budget through `PROVIDER_TOTAL_TIMEOUT_SECONDS`
+- Backoff strategy is configurable through `PROVIDER_RETRY_STRATEGY` and defaults to capped exponential backoff so retries do not bunch into aggressive bursts under provider instability
+- Backoff delay starts from `PROVIDER_RETRY_BACKOFF_SECONDS` and is capped by `PROVIDER_RETRY_MAX_BACKOFF_SECONDS`
 - Auth, validation, malformed payload, and other non-transient provider failures are not retried
-- Retry scheduling is logged with structured request context so repeated provider instability is visible in production logs
+- Retry scheduling and final request outcome are logged with retry count, retry exhaustion state, and retry-delay impact so repeated provider instability is visible in production logs
+- Scan diagnostics carry additive retry metadata through existing performance and provider-error diagnostics so the frontend can infer degraded provider conditions without a UI redesign
 
 ### Cache policy
 

@@ -47,23 +47,45 @@ class ProviderRequestError(RuntimeError):
         category: str,
         transient: bool,
         status_code: int | None = None,
+        retry_count: int = 0,
+        retry_exhausted: bool = False,
     ):
         super().__init__(message)
         self.category = category
         self.transient = transient
         self.status_code = status_code
+        self.retry_count = retry_count
+        self.retry_exhausted = retry_exhausted
 
 
 def _provider_runtime_settings() -> dict[str, float | int]:
     settings = get_settings()
+    retry_strategy = str(settings.get("provider_retry_strategy", "exponential")).strip().lower()
+    if retry_strategy not in {"fixed", "exponential"}:
+        retry_strategy = "exponential"
+
+    per_attempt_timeout = float(settings.get("provider_timeout_seconds", 12))
+    total_timeout = float(
+        settings.get(
+            "provider_total_timeout_seconds",
+            max(per_attempt_timeout, per_attempt_timeout + 8),
+        )
+    )
+
     return {
         "market_data_cache_ttl_seconds": int(
             settings.get("market_data_cache_ttl_seconds", 60)
         ),
-        "provider_timeout_seconds": float(settings.get("provider_timeout_seconds", 12)),
+        "provider_timeout_seconds": max(1.0, per_attempt_timeout),
+        "provider_total_timeout_seconds": max(1.0, total_timeout),
         "provider_retry_count": int(settings.get("provider_retry_count", 2)),
         "provider_retry_backoff_seconds": float(
             settings.get("provider_retry_backoff_seconds", 0.35)
+        ),
+        "provider_retry_strategy": retry_strategy,
+        "provider_retry_max_backoff_seconds": max(
+            0.0,
+            float(settings.get("provider_retry_max_backoff_seconds", 1.5)),
         ),
         "provider_contracts_cache_ttl_seconds": int(
             settings.get("provider_contracts_cache_ttl_seconds", 120)
@@ -150,8 +172,16 @@ def _write_cached_json(namespace, cache_key, value):
         pass
 
 
-def _backoff_seconds(attempt_index, base_delay):
-    return round(base_delay * max(attempt_index, 1), 3)
+def _backoff_seconds(attempt_index, base_delay, strategy, max_backoff_seconds):
+    base_delay = max(0.0, float(base_delay))
+    max_backoff_seconds = max(base_delay, float(max_backoff_seconds))
+
+    if strategy == "fixed":
+        delay_seconds = base_delay
+    else:
+        delay_seconds = base_delay * (2 ** max(attempt_index - 1, 0))
+
+    return round(min(delay_seconds, max_backoff_seconds), 3)
 
 
 def _request_provider_json(
@@ -167,8 +197,12 @@ def _request_provider_json(
     runtime = _provider_runtime_settings()
     max_attempts = max(1, int(runtime["provider_retry_count"]) + 1)
     timeout_seconds = float(runtime["provider_timeout_seconds"])
+    total_timeout_seconds = float(runtime["provider_total_timeout_seconds"])
     backoff_seconds = float(runtime["provider_retry_backoff_seconds"])
+    retry_strategy = str(runtime["provider_retry_strategy"])
+    max_backoff_seconds = float(runtime["provider_retry_max_backoff_seconds"])
     cache_key = None
+    total_started_at = time.perf_counter()
 
     if cache_namespace:
         cache_key = _build_cache_key(
@@ -183,19 +217,44 @@ def _request_provider_json(
             return cached_payload, {
                 "cache_hit": True,
                 "attempt_count": 0,
+                "retry_count": 0,
+                "retry_exhausted": False,
+                "retry_delay_ms": 0.0,
                 "status_code": 200,
                 "timeout_seconds": timeout_seconds,
+                "configured_timeout_seconds": timeout_seconds,
+                "total_timeout_seconds": total_timeout_seconds,
+                "retry_strategy": retry_strategy,
+                "duration_ms": 0.0,
             }
 
     last_error = None
+    total_retry_delay_seconds = 0.0
+    budget_exhausted = False
     for attempt in range(1, max_attempts + 1):
+        elapsed_seconds = time.perf_counter() - total_started_at
+        remaining_budget_seconds = total_timeout_seconds - elapsed_seconds
+
+        if remaining_budget_seconds <= 0:
+            budget_exhausted = True
+            last_error = ProviderRequestError(
+                "Provider request exceeded the total retry timeout budget.",
+                category="timeout",
+                transient=True,
+            )
+            break
+
+        effective_timeout_seconds = round(
+            max(0.1, min(timeout_seconds, remaining_budget_seconds)),
+            3,
+        )
         request_started_at = time.perf_counter()
         try:
             response = requests.get(
                 url,
                 headers=headers,
                 params=params,
-                timeout=timeout_seconds,
+                timeout=effective_timeout_seconds,
             )
         except requests.exceptions.Timeout as exc:
             last_error = ProviderRequestError(
@@ -253,19 +312,58 @@ def _request_provider_json(
                     else:
                         if cache_namespace and cache_key:
                             _write_cached_json(cache_namespace, cache_key, payload)
+                        total_duration_ms = round(
+                            (time.perf_counter() - total_started_at) * 1000,
+                            2,
+                        )
+                        retry_count = max(0, attempt - 1)
+                        log_event(
+                            logger,
+                            "provider_request_completed",
+                            provider="alpaca",
+                            operation=operation,
+                            ticker=ticker,
+                            attempt=attempt,
+                            max_attempts=max_attempts,
+                            retry_count=retry_count,
+                            retry_exhausted=False,
+                            retry_strategy=retry_strategy,
+                            retry_delay_ms=round(total_retry_delay_seconds * 1000, 2),
+                            duration_ms=total_duration_ms,
+                            status_code=response.status_code,
+                            timeout_seconds=effective_timeout_seconds,
+                            total_timeout_seconds=total_timeout_seconds,
+                            final_outcome="succeeded",
+                        )
                         return payload, {
                             "cache_hit": False,
                             "attempt_count": attempt,
+                            "retry_count": retry_count,
+                            "retry_exhausted": False,
+                            "retry_delay_ms": round(total_retry_delay_seconds * 1000, 2),
                             "status_code": response.status_code,
-                            "timeout_seconds": timeout_seconds,
-                            "duration_ms": round(
-                                (time.perf_counter() - request_started_at) * 1000, 2
-                            ),
+                            "timeout_seconds": effective_timeout_seconds,
+                            "configured_timeout_seconds": timeout_seconds,
+                            "total_timeout_seconds": total_timeout_seconds,
+                            "retry_strategy": retry_strategy,
+                            "duration_ms": total_duration_ms,
                         }
 
         duration_ms = round((time.perf_counter() - request_started_at) * 1000, 2)
         if last_error is not None and last_error.transient and attempt < max_attempts:
-            retry_delay = _backoff_seconds(attempt, backoff_seconds)
+            elapsed_seconds = time.perf_counter() - total_started_at
+            remaining_budget_seconds = total_timeout_seconds - elapsed_seconds
+            retry_delay = _backoff_seconds(
+                attempt,
+                backoff_seconds,
+                retry_strategy,
+                max_backoff_seconds,
+            )
+            retry_delay = min(retry_delay, max(0.0, remaining_budget_seconds))
+            if retry_delay <= 0:
+                budget_exhausted = True
+                break
+
             log_event(
                 logger,
                 "provider_retry_scheduled",
@@ -279,8 +377,14 @@ def _request_provider_json(
                 error_type=type(last_error).__name__,
                 error_category=last_error.category,
                 status_code=last_error.status_code,
+                retry_count=attempt,
+                retry_strategy=retry_strategy,
                 retry_delay_seconds=retry_delay,
+                total_retry_delay_ms=round((total_retry_delay_seconds + retry_delay) * 1000, 2),
+                timeout_seconds=effective_timeout_seconds,
+                total_timeout_seconds=total_timeout_seconds,
             )
+            total_retry_delay_seconds += retry_delay
             time.sleep(retry_delay)
             continue
 
@@ -292,6 +396,34 @@ def _request_provider_json(
             category="unknown",
             transient=False,
         )
+
+    final_attempt_count = min(max_attempts, attempt if "attempt" in locals() else 1)
+    retry_count = max(0, final_attempt_count - 1)
+    retry_exhausted = bool(last_error.transient and (final_attempt_count >= max_attempts or budget_exhausted))
+    last_error.retry_count = retry_count
+    last_error.retry_exhausted = retry_exhausted
+
+    log_event(
+        logger,
+        "provider_request_failed",
+        level=logging.ERROR if retry_exhausted else logging.WARNING,
+        provider="alpaca",
+        operation=operation,
+        ticker=ticker,
+        attempt=final_attempt_count,
+        max_attempts=max_attempts,
+        retry_count=retry_count,
+        retry_exhausted=retry_exhausted,
+        retry_strategy=retry_strategy,
+        retry_delay_ms=round(total_retry_delay_seconds * 1000, 2),
+        duration_ms=round((time.perf_counter() - total_started_at) * 1000, 2),
+        timeout_seconds=timeout_seconds,
+        total_timeout_seconds=total_timeout_seconds,
+        error_type=type(last_error).__name__,
+        error_category=last_error.category,
+        status_code=last_error.status_code,
+        final_outcome="failed",
+    )
 
     raise last_error
 
@@ -377,6 +509,7 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
     result["performance"]["provider_duration_ms"] = round(
         (time.perf_counter() - started_at) * 1000, 2
     )
+    provider_performance = result.get("performance", {}) or {}
     if not result.get("provider_errors"):
         set_cached_market_data(cache_key, result)
     log_event(
@@ -387,6 +520,8 @@ def get_market_data(tickers, dte_min=30, dte_max=45):
         cache_hit=False,
         missing_ticker_count=len(result.get("missing_tickers", [])),
         provider_error_count=len(result.get("provider_errors", [])),
+        retry_count=provider_performance.get("retry_count", 0),
+        retry_exhausted=provider_performance.get("retry_exhausted", False),
     )
     return result
 
@@ -464,6 +599,8 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
     missing_tickers = []
     provider_errors = []
     ticker_diagnostics = []
+    total_retry_count = 0
+    retry_exhausted_count = 0
     cache_summary = {
         "contracts": {"hits": 0, "misses": 0},
         "snapshots": {"hits": 0, "misses": 0},
@@ -485,6 +622,8 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                 dte_max=dte_max,
             )
             cache_summary["contracts"]["hits" if discovered["request_metadata"].get("cache_hit") else "misses"] += 1
+            total_retry_count += int(discovered["request_metadata"].get("retry_count", 0))
+            retry_exhausted_count += int(bool(discovered["request_metadata"].get("retry_exhausted", False)))
 
             if not discovered["contracts"]:
                 missing_tickers.append(ticker)
@@ -501,6 +640,8 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                             "discovered_contract_count": 0,
                             "reason": "empty_option_chain",
                             "request_attempts": discovered["request_metadata"].get("attempt_count", 0),
+                            "retry_count": discovered["request_metadata"].get("retry_count", 0),
+                            "retry_exhausted": discovered["request_metadata"].get("retry_exhausted", False),
                         },
                         "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
                     }
@@ -520,8 +661,12 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
             option_snapshots = fetch_option_snapshots_for_symbols(option_symbols)
             cache_summary["snapshots"]["hits"] += option_snapshots["request_metadata"].get("cache_hits", 0)
             cache_summary["snapshots"]["misses"] += option_snapshots["request_metadata"].get("cache_misses", 0)
+            total_retry_count += int(option_snapshots["request_metadata"].get("retry_count", 0))
+            retry_exhausted_count += int(option_snapshots["request_metadata"].get("retry_exhausted_count", 0))
             underlying_trade = fetch_underlying_stock_trade(ticker)
             cache_summary["underlying"]["hits" if underlying_trade["request_metadata"].get("cache_hit") else "misses"] += 1
+            total_retry_count += int(underlying_trade["request_metadata"].get("retry_count", 0))
+            retry_exhausted_count += int(bool(underlying_trade["request_metadata"].get("retry_exhausted", False)))
 
             normalized = normalize_discovered_contracts(
                         ticker=ticker,
@@ -612,8 +757,12 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                     "error_type": type(exc).__name__,
                     "category": getattr(exc, "category", "provider"),
                     "status_code": getattr(exc, "status_code", None),
+                    "retry_count": getattr(exc, "retry_count", 0),
+                    "retry_exhausted": getattr(exc, "retry_exhausted", False),
                 }
             )
+            total_retry_count += int(getattr(exc, "retry_count", 0))
+            retry_exhausted_count += int(bool(getattr(exc, "retry_exhausted", False)))
             ticker_diagnostics.append(
                 {
                     "ticker": ticker,
@@ -623,6 +772,8 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
                     "provider_diagnostics": {
                         "ticker": ticker,
                         "reason": str(exc),
+                        "retry_count": getattr(exc, "retry_count", 0),
+                        "retry_exhausted": getattr(exc, "retry_exhausted", False),
                     },
                     "duration_ms": round((time.perf_counter() - ticker_started_at) * 1000, 2),
                 }
@@ -644,7 +795,11 @@ def get_alpaca_market_data(tickers, dte_min=30, dte_max=45):
         "provider_errors": provider_errors,
         "ticker_diagnostics": ticker_diagnostics,
         "cache": cache_summary,
-        "performance": {},
+        "performance": {
+            "retry_count": total_retry_count,
+            "retry_exhausted": retry_exhausted_count > 0,
+            "retry_exhausted_count": retry_exhausted_count,
+        },
     }
 
 
@@ -791,6 +946,8 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
     cache_hits = 0
     cache_misses = 0
     total_attempts = 0
+    total_retry_count = 0
+    retry_exhausted_count = 0
     errors = []
 
     for symbol_chunk in chunk_list(option_symbols, chunk_size):
@@ -813,13 +970,19 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
                     "message": str(exc),
                     "category": exc.category,
                     "status_code": exc.status_code,
+                    "retry_count": exc.retry_count,
+                    "retry_exhausted": exc.retry_exhausted,
                 }
             )
+            total_retry_count += int(exc.retry_count)
+            retry_exhausted_count += int(bool(exc.retry_exhausted))
             continue
 
         cache_hits += 1 if request_metadata.get("cache_hit") else 0
         cache_misses += 0 if request_metadata.get("cache_hit") else 1
         total_attempts += int(request_metadata.get("attempt_count", 0))
+        total_retry_count += int(request_metadata.get("retry_count", 0))
+        retry_exhausted_count += int(bool(request_metadata.get("retry_exhausted", False)))
 
         chunk_snapshots = {}
         for key in ["snapshots", "data"]:
@@ -837,6 +1000,9 @@ def fetch_option_snapshots_for_symbols(option_symbols, chunk_size=50):
             "cache_misses": cache_misses,
             "chunk_count": len(list(chunk_list(option_symbols, chunk_size))),
             "attempt_count": total_attempts,
+            "retry_count": total_retry_count,
+            "retry_exhausted": retry_exhausted_count > 0,
+            "retry_exhausted_count": retry_exhausted_count,
             "errors": errors,
         },
     }

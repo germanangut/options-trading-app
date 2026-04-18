@@ -26,10 +26,16 @@ services:
         value: 60
       - key: PROVIDER_TIMEOUT_SECONDS
         value: 12
+      - key: PROVIDER_TOTAL_TIMEOUT_SECONDS
+        value: 20
       - key: PROVIDER_RETRY_COUNT
         value: 2
       - key: PROVIDER_RETRY_BACKOFF_SECONDS
         value: 0.35
+      - key: PROVIDER_RETRY_STRATEGY
+        value: exponential
+      - key: PROVIDER_RETRY_MAX_BACKOFF_SECONDS
+        value: 1.5
       - key: PROVIDER_CONTRACTS_CACHE_TTL_SECONDS
         value: 120
       - key: PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS

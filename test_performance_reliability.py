@@ -112,7 +112,58 @@ def test_discover_contracts_retries_after_timeout(monkeypatch):
         assert call_count["value"] == 2
         assert result["contracts"]
         assert result["request_metadata"]["attempt_count"] == 2
+        assert result["request_metadata"]["retry_count"] == 1
+        assert result["request_metadata"]["retry_exhausted"] is False
         assert result["request_metadata"]["cache_hit"] is False
+    finally:
+        shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
+
+
+def test_discover_contracts_reports_retry_exhaustion(monkeypatch):
+    workspace_tmp_dir = _workspace_tmp_dir()
+    call_count = {"value": 0}
+
+    def fake_get(*args, **kwargs):
+        call_count["value"] += 1
+        raise requests.exceptions.Timeout("still timing out")
+
+    monkeypatch.setenv("CACHE_DIR", str(workspace_tmp_dir / "cache"))
+    monkeypatch.setenv("PROVIDER_RETRY_COUNT", "2")
+    monkeypatch.setenv("PROVIDER_TOTAL_TIMEOUT_SECONDS", "20")
+    monkeypatch.setattr(data_provider.requests, "get", fake_get)
+
+    try:
+        with pytest.raises(data_provider.ProviderRequestError) as exc_info:
+            discover_option_contracts_for_window("SPY", dte_min=1, dte_max=4000)
+
+        assert call_count["value"] == 3
+        assert exc_info.value.retry_count == 2
+        assert exc_info.value.retry_exhausted is True
+        assert exc_info.value.category == "timeout"
+    finally:
+        shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
+
+
+def test_discover_contracts_does_not_retry_auth_failure(monkeypatch):
+    workspace_tmp_dir = _workspace_tmp_dir()
+    call_count = {"value": 0}
+
+    def fake_get(*args, **kwargs):
+        call_count["value"] += 1
+        return _FakeResponse(401, {"message": "unauthorized"})
+
+    monkeypatch.setenv("CACHE_DIR", str(workspace_tmp_dir / "cache"))
+    monkeypatch.setenv("PROVIDER_RETRY_COUNT", "2")
+    monkeypatch.setattr(data_provider.requests, "get", fake_get)
+
+    try:
+        with pytest.raises(data_provider.ProviderRequestError) as exc_info:
+            discover_option_contracts_for_window("SPY", dte_min=1, dte_max=4000)
+
+        assert call_count["value"] == 1
+        assert exc_info.value.retry_count == 0
+        assert exc_info.value.retry_exhausted is False
+        assert exc_info.value.category == "auth"
     finally:
         shutil.rmtree(workspace_tmp_dir, ignore_errors=True)
 
