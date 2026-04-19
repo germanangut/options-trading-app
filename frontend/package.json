@@ -7,7 +7,11 @@
     "dev": "vite",
     "build": "node ./node_modules/typescript/bin/tsc -b && node ./node_modules/vite/bin/vite.js build",
     "preview": "vite preview",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:visual": "playwright test --project=chromium",
+    "test:visual:update": "playwright test --project=chromium --update-snapshots",
+    "test:visual:all": "playwright test",
+    "test:visual:ci": "playwright test --project=chromium --project=mobile-chrome"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.2",
@@ -17,11 +21,12 @@
     "react-router-dom": "^7.9.4"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.0",
     "@types/react": "^19.2.2",
     "@types/react-dom": "^19.2.2",
     "@vitejs/plugin-react": "^5.0.4",
-    "@testing-library/jest-dom": "^6.9.1",
-    "@testing-library/react": "^16.3.0",
     "autoprefixer": "^10.4.21",
     "jsdom": "^27.0.0",
     "postcss": "^8.5.6",
