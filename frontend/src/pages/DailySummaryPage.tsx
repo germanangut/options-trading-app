@@ -4,7 +4,7 @@ import { MetricCard } from "../components/ui/MetricCard";
 import { PageShell } from "../components/ui/PageShell";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
-import { selectDailySummaryModel, selectScanReliabilityNotice } from "../features/scans/selectors/scanSelectors";
+import { selectDailySummaryModel } from "../features/scans/selectors/scanSelectors";
 import { describeApiError } from "../lib/apiErrors";
 import { formatDuration, formatTradeLabel } from "../lib/formatters";
 
@@ -28,15 +28,8 @@ export function DailySummaryPage() {
   }
 
   const dailySummary = selectDailySummaryModel(latestScan.data);
-  const reliabilityNotice = selectScanReliabilityNotice(latestScan.data);
-
   return (
     <PageShell eyebrow="Daily Summary" title="Daily scan recap" description="A compact briefing layer over the latest run for quick daily orientation.">
-      {reliabilityNotice ? (
-        <WarningBand tone={reliabilityNotice.tone} title={reliabilityNotice.title}>
-          {reliabilityNotice.message}
-        </WarningBand>
-      ) : null}
       <Card eyebrow="Headline Metrics" title="Daily Summary" subtitle="Headline recap of the latest scan.">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="Qualified Trades" value={dailySummary.headline.qualifiedCount} tone="success" />

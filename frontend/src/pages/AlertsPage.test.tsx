@@ -68,7 +68,7 @@ function buildScan(): ScanResult {
 
 
 describe("AlertsPage", () => {
-  it("shows partial results messaging when some tickers fail", () => {
+  it("keeps partial coverage out of the main page body when some tickers fail", () => {
     const scan = buildScan();
     scan.diagnostics.partial_result = true;
     scan.diagnostics.missing_tickers = ["AAPL", "NVDA"];
@@ -82,10 +82,9 @@ describe("AlertsPage", () => {
 
     render(<AlertsPage />);
 
-    expect(screen.getByText("Partial results available")).toBeInTheDocument();
-    expect(
-      screen.getByText("2 ticker(s) failed or were unavailable during the latest scan, so the alert list may be incomplete."),
-    ).toBeInTheDocument();
+    expect(screen.queryByText("Partial results available")).not.toBeInTheDocument();
+    expect(screen.getByText("No alerts under partial coverage")).toBeInTheDocument();
+    expect(screen.getByText("Some tickers were unavailable during the scan, so review diagnostics before treating this as a fully clean market pass.")).toBeInTheDocument();
   });
 
   it("suggests widening parameters when a healthy run has no alerts", () => {

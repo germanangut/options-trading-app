@@ -2,7 +2,6 @@ import { Card } from "../components/ui/Card";
 import { Chip } from "../components/ui/Chip";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageShell } from "../components/ui/PageShell";
-import { PartialResultBanner } from "../components/ui/PartialResultBanner";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectAlertsModel } from "../features/scans/selectors/scanSelectors";
@@ -36,10 +35,6 @@ export function AlertsPage() {
       title="Alert surface"
       description="Trade alerts remain backend-owned; this page focuses on reading priority, partial coverage, and concise explanations."
     >
-      {alerts.partialNotice ? (
-        <PartialResultBanner title={alerts.partialNotice.title} message={alerts.partialNotice.message} />
-      ) : null}
-
       <Card eyebrow="Live Alert Feed" title="Alerts" subtitle={`${alerts.total} alert(s) currently surfaced by the backend.`}>
         {alerts.rows.length === 0 ? (
           <EmptyState

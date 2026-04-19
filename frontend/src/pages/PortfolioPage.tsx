@@ -5,7 +5,7 @@ import { PageShell } from "../components/ui/PageShell";
 import { PortfolioImpactBand } from "../components/ui/PortfolioImpactBand";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
-import { selectPortfolioModel, selectScanReliabilityNotice } from "../features/scans/selectors/scanSelectors";
+import { selectPortfolioModel } from "../features/scans/selectors/scanSelectors";
 import { describeApiError } from "../lib/apiErrors";
 import { formatNumber } from "../lib/formatters";
 
@@ -29,15 +29,8 @@ export function PortfolioPage() {
   }
 
   const portfolio = selectPortfolioModel(latestScan.data);
-  const reliabilityNotice = selectScanReliabilityNotice(latestScan.data);
-
   return (
     <PageShell eyebrow="Portfolio" title="Portfolio interpretation" description="Exposure, sizing, and posture surfaces aligned with the same premium decision language.">
-      {reliabilityNotice ? (
-        <WarningBand tone={reliabilityNotice.tone} title={reliabilityNotice.title}>
-          {reliabilityNotice.message}
-        </WarningBand>
-      ) : null}
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {portfolio.summaryCards.map((card) => (
           <MetricCard key={card.label} label={card.label} value={card.value} tone="neutral" />

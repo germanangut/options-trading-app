@@ -205,6 +205,125 @@ export function selectScanPerformanceSummary(scanResult?: ScanResult | null) {
   };
 }
 
+export function selectSessionDiagnosticsModel(scanResult?: ScanResult | null) {
+  if (!scanResult) {
+    return null;
+  }
+
+  const diagnostics = scanDiagnostics(scanResult);
+  const performance = diagnostics.performance ?? {};
+  const reliabilityNotice = selectScanReliabilityNotice(scanResult);
+  const performanceSummary = selectScanPerformanceSummary(scanResult);
+  const degradedNotes = degradedRetrievalNotes(diagnostics);
+  const providerDurationMs = numberOrNull(performance.provider_duration_ms);
+  const averageProviderLatencyMs = numberOrNull(performance.average_provider_latency_ms);
+  const totalProviderCalls = numberOrNull(performance.total_provider_calls);
+  const retryCount = numberOrNull(performance.retry_count) ?? 0;
+  const retryLatencyImpactMs = numberOrNull(performance.retry_latency_impact_ms);
+  const estimatedCacheSavedDurationMs = numberOrNull(performance.estimated_cache_saved_duration_ms);
+  const cacheHitRate = resolveCacheHitRate(diagnostics);
+  const partialCoverage = Boolean(diagnostics.partial_result)
+    || diagnostics.provider_errors.length > 0
+    || diagnostics.missing_tickers.length > 0;
+
+  let statusTone: "success" | "info" | "warning" = "success";
+  let statusLabel = "Healthy";
+  let statusDetail = "Latest run operational checks look normal.";
+
+  if (partialCoverage) {
+    statusTone = "warning";
+    statusLabel = "Degraded";
+    statusDetail = "Coverage is incomplete in the latest run.";
+  } else if (degradedNotes.includes("Provider response slower than usual.")) {
+    statusTone = "warning";
+    statusLabel = "Provider slower than usual";
+    statusDetail = "The latest run completed, but provider timing exceeded the normal range.";
+  } else if (reliabilityNotice) {
+    statusTone = "info";
+    statusLabel = "Degraded";
+    statusDetail = "The latest run completed with retrieval caveats worth reviewing.";
+  }
+
+  const retrievalSection = reliabilityNotice
+    ? {
+        title: reliabilityNotice.title,
+        tone: reliabilityNotice.tone,
+        message: reliabilityNotice.message,
+        notes: reliabilityNotice.notes,
+      }
+    : {
+        title: "Retrieval health",
+        tone: "success" as const,
+        message: "The latest run completed without degraded retrieval signals.",
+        notes: [] as string[],
+      };
+
+  const providerTimingNotes = [
+    Number.isFinite(providerDurationMs)
+      ? `Provider phase completed in ${(providerDurationMs / 1000).toFixed(2)}s.`
+      : null,
+    Number.isFinite(averageProviderLatencyMs)
+      ? `Average provider latency: ${averageProviderLatencyMs.toFixed(2)}ms.`
+      : null,
+    Number.isFinite(totalProviderCalls)
+      ? `Provider calls issued: ${totalProviderCalls}.`
+      : null,
+  ].filter(Boolean) as string[];
+
+  const retryAndCacheNotes = [
+    retryCount > 0 ? `Retries attempted: ${retryCount}.` : null,
+    Number.isFinite(retryLatencyImpactMs) && retryLatencyImpactMs > 0
+      ? `Retry backoff added ${retryLatencyImpactMs.toFixed(2)}ms.`
+      : null,
+    cacheHitRate !== null ? `Cache hit rate: ${(cacheHitRate * 100).toFixed(0)}%.` : null,
+    Number.isFinite(estimatedCacheSavedDurationMs) && estimatedCacheSavedDurationMs > 0
+      ? `Cache reuse saved an estimated ${estimatedCacheSavedDurationMs.toFixed(2)}ms.`
+      : null,
+  ].filter(Boolean) as string[];
+
+  return {
+    statusTone,
+    statusLabel,
+    statusDetail,
+    triggerLabel: "View diagnostics",
+    sections: [
+      retrievalSection,
+      {
+        title: "Provider timing",
+        tone: providerTimingNotes.length > 0 ? "info" : "success",
+        message: providerTimingNotes.length > 0
+          ? "Latest provider timing for the current session."
+          : "No provider timing metrics were returned for the latest run.",
+        notes: providerTimingNotes,
+      },
+      {
+        title: "Retry and cache notes",
+        tone: retryAndCacheNotes.length > 0 ? "info" : "success",
+        message: retryAndCacheNotes.length > 0
+          ? "Operational retry and cache metadata for the latest run."
+          : "No retry or cache caveats were recorded for the latest run.",
+        notes: retryAndCacheNotes,
+      },
+      {
+        title: "Session metadata",
+        tone: "info" as const,
+        message: "Current latest-run operational metadata.",
+        notes: [
+          scanResult.scan_metadata?.scan_id ? `Scan ID: ${scanResult.scan_metadata.scan_id}` : null,
+          scanResult.scan_metadata?.generated_at ? `Generated at: ${scanResult.scan_metadata.generated_at}` : null,
+          scanResult.scan_metadata?.provider ? `Provider: ${scanResult.scan_metadata.provider}` : null,
+          scanResult.scan_metadata?.profile ? `Profile: ${scanResult.scan_metadata.profile}` : null,
+          scanResult.scan_metadata?.ticker_group ? `Ticker group: ${scanResult.scan_metadata.ticker_group}` : null,
+          scanResult.scan_metadata?.execution_time_seconds !== undefined
+            ? `Execution time: ${Number(scanResult.scan_metadata.execution_time_seconds).toFixed(2)}s.`
+            : null,
+          performanceSummary?.message ?? null,
+        ].filter(Boolean) as string[],
+      },
+    ],
+  };
+}
+
 function fallbackScore(trade: Pick<QualifiedTradeRow, "adjusted_score" | "score">) {
   return trade.adjusted_score ?? trade.score ?? null;
 }

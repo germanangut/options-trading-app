@@ -1,8 +1,9 @@
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ScanResult } from "../../types/api";
+import { NAV_ITEMS } from "../../lib/constants";
 import { Sidebar } from "./Sidebar";
 
 vi.mock("../../features/scans/hooks/useLatestScan", () => ({
@@ -99,6 +100,8 @@ describe("Sidebar", () => {
       </MemoryRouter>,
     );
 
+    const sidebar = screen.getByTestId("scan-sidebar");
+
     expect(screen.getByTestId("sidebar-mode-switch")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-section-posture")).toBeInTheDocument();
     expect(screen.getByTestId("sidebar-section-market-focus")).toBeInTheDocument();
@@ -110,6 +113,9 @@ describe("Sidebar", () => {
     expect(screen.getByTestId("run-scan-button")).toHaveClass("bg-accent", "text-surface-0");
     expect(screen.getByTestId("reset-scan-button")).toBeInTheDocument();
     expect(screen.queryByTestId("expert-fields")).not.toBeInTheDocument();
+    NAV_ITEMS.forEach((item) => {
+      expect(within(sidebar).queryByRole("link", { name: item.label })).not.toBeInTheDocument();
+    });
 
     fireEvent.click(screen.getByTestId("mode-expert"));
 

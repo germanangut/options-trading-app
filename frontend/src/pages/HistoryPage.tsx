@@ -4,7 +4,7 @@ import { MetricCard } from "../components/ui/MetricCard";
 import { PageShell } from "../components/ui/PageShell";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
-import { selectHistoryModel, selectScanReliabilityNotice } from "../features/scans/selectors/scanSelectors";
+import { selectHistoryModel } from "../features/scans/selectors/scanSelectors";
 import { describeApiError } from "../lib/apiErrors";
 
 export function HistoryPage() {
@@ -27,15 +27,8 @@ export function HistoryPage() {
   }
 
   const history = selectHistoryModel(latestScan.data);
-  const reliabilityNotice = selectScanReliabilityNotice(latestScan.data);
-
   return (
     <PageShell eyebrow="History" title="Historical context" description="Recent pattern and frequency context from the current stored-run summary.">
-      {reliabilityNotice ? (
-        <WarningBand tone={reliabilityNotice.tone} title={reliabilityNotice.title}>
-          {reliabilityNotice.message}
-        </WarningBand>
-      ) : null}
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {history.summaryCards.map((card) => (
           <MetricCard key={card.label} label={card.label} value={card.value} tone="neutral" />
