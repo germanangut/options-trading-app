@@ -8,8 +8,14 @@ type PendingScanActivity = {
   submittedAt: number | null;
 };
 
+type ScanActivity = {
+  isRunning: boolean;
+  latestRequest: ScanRequest | null;
+  latestSubmittedAt: number | null;
+};
 
-export function useScanActivity() {
+
+export function useScanActivity(): ScanActivity {
   const pendingMutations = useMutationState<PendingScanActivity | null>({
     filters: { mutationKey: ["run-scan"], status: "pending" },
     select: (mutation) => {

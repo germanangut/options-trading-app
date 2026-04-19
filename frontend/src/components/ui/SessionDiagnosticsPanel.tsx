@@ -1,19 +1,14 @@
 import clsx from "clsx";
 
+import type { SessionDiagnosticsModel, SessionDiagnosticsTone } from "../../features/scans/selectors/scanSelectors";
+
 type SessionDiagnosticsPanelProps = {
   isOpen: boolean;
   onClose: () => void;
-  model: {
-    sections: Array<{
-      title: string;
-      tone: "success" | "info" | "warning" | "danger";
-      message: string;
-      notes: string[];
-    }>;
-  } | null;
+  model: SessionDiagnosticsModel | null;
 };
 
-const sectionToneClasses: Record<"success" | "info" | "warning" | "danger", string> = {
+const sectionToneClasses: Record<SessionDiagnosticsTone, string> = {
   success: "border-success/25 bg-success-soft/35",
   info: "border-accent/25 bg-accent-soft/35",
   warning: "border-warning/25 bg-warning-soft/35",

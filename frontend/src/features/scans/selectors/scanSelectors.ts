@@ -12,6 +12,23 @@ const HIGH_PROVIDER_LATENCY_MS = 750;
 const HIGH_PROVIDER_DURATION_MS = 4000;
 const LOW_CACHE_HIT_RATE = 0.35;
 
+export type SessionDiagnosticsTone = "success" | "info" | "warning" | "danger";
+
+export type SessionDiagnosticsSection = {
+  title: string;
+  tone: SessionDiagnosticsTone;
+  message: string;
+  notes: string[];
+};
+
+export type SessionDiagnosticsModel = {
+  statusTone: "success" | "info" | "warning";
+  statusLabel: string;
+  statusDetail: string;
+  triggerLabel: string;
+  sections: SessionDiagnosticsSection[];
+};
+
 
 function arrayOrEmpty<T>(value: T[] | null | undefined) {
   return Array.isArray(value) ? value : [];
@@ -205,7 +222,7 @@ export function selectScanPerformanceSummary(scanResult?: ScanResult | null) {
   };
 }
 
-export function selectSessionDiagnosticsModel(scanResult?: ScanResult | null) {
+export function selectSessionDiagnosticsModel(scanResult?: ScanResult | null): SessionDiagnosticsModel | null {
   if (!scanResult) {
     return null;
   }
@@ -244,7 +261,7 @@ export function selectSessionDiagnosticsModel(scanResult?: ScanResult | null) {
     statusDetail = "The latest run completed with retrieval caveats worth reviewing.";
   }
 
-  const retrievalSection = reliabilityNotice
+  const retrievalSection: SessionDiagnosticsSection = reliabilityNotice
     ? {
         title: reliabilityNotice.title,
         tone: reliabilityNotice.tone,
@@ -259,24 +276,24 @@ export function selectSessionDiagnosticsModel(scanResult?: ScanResult | null) {
       };
 
   const providerTimingNotes = [
-    Number.isFinite(providerDurationMs)
+    providerDurationMs !== null
       ? `Provider phase completed in ${(providerDurationMs / 1000).toFixed(2)}s.`
       : null,
-    Number.isFinite(averageProviderLatencyMs)
+    averageProviderLatencyMs !== null
       ? `Average provider latency: ${averageProviderLatencyMs.toFixed(2)}ms.`
       : null,
-    Number.isFinite(totalProviderCalls)
+    totalProviderCalls !== null
       ? `Provider calls issued: ${totalProviderCalls}.`
       : null,
   ].filter(Boolean) as string[];
 
   const retryAndCacheNotes = [
     retryCount > 0 ? `Retries attempted: ${retryCount}.` : null,
-    Number.isFinite(retryLatencyImpactMs) && retryLatencyImpactMs > 0
+    retryLatencyImpactMs !== null && retryLatencyImpactMs > 0
       ? `Retry backoff added ${retryLatencyImpactMs.toFixed(2)}ms.`
       : null,
     cacheHitRate !== null ? `Cache hit rate: ${(cacheHitRate * 100).toFixed(0)}%.` : null,
-    Number.isFinite(estimatedCacheSavedDurationMs) && estimatedCacheSavedDurationMs > 0
+    estimatedCacheSavedDurationMs !== null && estimatedCacheSavedDurationMs > 0
       ? `Cache reuse saved an estimated ${estimatedCacheSavedDurationMs.toFixed(2)}ms.`
       : null,
   ].filter(Boolean) as string[];

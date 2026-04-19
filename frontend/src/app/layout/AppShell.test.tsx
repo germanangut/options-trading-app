@@ -124,7 +124,7 @@ function renderShell() {
     isRunning: false,
     latestSubmittedAt: null,
     latestRequest: null,
-  } as ReturnType<typeof useScanActivity>);
+  });
 
   vi.mocked(useElapsedTimer).mockReturnValue(0);
 
