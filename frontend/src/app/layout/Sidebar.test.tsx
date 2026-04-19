@@ -1,6 +1,6 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ScanResult } from "../../types/api";
 import { Sidebar } from "./Sidebar";
@@ -15,6 +15,10 @@ vi.mock("../../features/scans/hooks/useRunScan", () => ({
 
 const { useLatestScan } = await import("../../features/scans/hooks/useLatestScan");
 const { useRunScan } = await import("../../features/scans/hooks/useRunScan");
+
+afterEach(() => {
+  cleanup();
+});
 
 function buildScan(): ScanResult {
   return {
@@ -75,7 +79,44 @@ function buildScan(): ScanResult {
 }
 
 describe("Sidebar", () => {
-  it("uses prescriptive guided wording and still switches to expert controls on demand", () => {
+  it("renders the grouped scan command structure with an anchored run zone and expert toggle", () => {
+    const mutate = vi.fn();
+
+    vi.mocked(useLatestScan).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildScan(),
+    } as ReturnType<typeof useLatestScan>);
+    vi.mocked(useRunScan).mockReturnValue({
+      isPending: false,
+      isError: false,
+      mutate,
+    } as unknown as ReturnType<typeof useRunScan>);
+
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("sidebar-mode-switch")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-section-posture")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-section-market-focus")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-section-direction")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-section-timing")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-section-shortlist-style")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-action-zone")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-plan-summary")).toBeInTheDocument();
+    expect(screen.getByTestId("run-scan-button")).toHaveClass("bg-accent", "text-surface-0");
+    expect(screen.getByTestId("reset-scan-button")).toBeInTheDocument();
+    expect(screen.queryByTestId("expert-fields")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("mode-expert"));
+
+    expect(screen.getByTestId("expert-fields")).toBeInTheDocument();
+  });
+
+  it("renders a short interpreted plan summary that updates as guided choices change", () => {
     vi.mocked(useLatestScan).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -93,20 +134,56 @@ describe("Sidebar", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByText("Tell PRIS what you want")).toBeInTheDocument();
-    expect(screen.getByText("What PRIS will scan for")).toBeInTheDocument();
-    expect(screen.getByText(/PRIS will scan for balanced premium trades in big tech/i)).toBeInTheDocument();
-    expect(screen.queryByTestId("expert-fields")).not.toBeInTheDocument();
+    expect(screen.getByText("Balanced scan across Tech for either direction.")).toBeInTheDocument();
+    expect(screen.getByText("Expiring in 3-5 weeks with moderate filtering and some history.")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: /Bearish setups/i }));
-    expect(screen.getByText(/It will look for bearish setups/i)).toBeInTheDocument();
-
+    fireEvent.click(screen.getByRole("button", { name: /Bearish/i }));
     fireEvent.click(screen.getByRole("button", { name: /Later/i }));
-    expect(screen.getAllByText(/expiring later, around 5-8 weeks out/i).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /Stricter/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Repeat setups/i }));
 
-    fireEvent.click(screen.getByTestId("mode-expert"));
+    expect(screen.getByText("Balanced scan across Tech for bearish direction.")).toBeInTheDocument();
+    expect(screen.getByText("Expiring in 5-8 weeks with stricter filtering and repeat setups.")).toBeInTheDocument();
+  });
 
-    expect(screen.getByText("Direct control surface")).toBeInTheDocument();
-    expect(screen.getByTestId("expert-fields")).toBeInTheDocument();
+  it("keeps guided selections mapped to the same scan request fields when running a scan", () => {
+    const mutate = vi.fn();
+
+    vi.mocked(useLatestScan).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildScan(),
+    } as ReturnType<typeof useLatestScan>);
+    vi.mocked(useRunScan).mockReturnValue({
+      isPending: false,
+      isError: false,
+      mutate,
+    } as unknown as ReturnType<typeof useRunScan>);
+
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Aggressive/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Index/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Bearish/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Later/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Stricter/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Repeat setups/i }));
+    fireEvent.click(screen.getByTestId("run-scan-button"));
+
+    expect(mutate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        profile: "aggressive",
+        ticker_group: "index",
+        selected_strategy_keys: ["bear_call_spread"],
+        dte_min: 35,
+        dte_max: 56,
+        min_score: 75,
+        min_consistency: 5,
+      }),
+    );
   });
 });

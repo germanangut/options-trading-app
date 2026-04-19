@@ -215,6 +215,92 @@ function describeFreshnessLabel(stabilityLevel?: string | null, stabilityCount?:
 }
 
 
+function summarizeDirection(strategyKeys: string[]) {
+  const hasBull = strategyKeys.includes("bull_put_spread");
+  const hasBear = strategyKeys.includes("bear_call_spread");
+
+  if (hasBull && hasBear) {
+    return "either direction";
+  }
+
+  if (hasBull) {
+    return "bullish direction";
+  }
+
+  if (hasBear) {
+    return "bearish direction";
+  }
+
+  return "current direction filters";
+}
+
+
+function summarizeTimingWindow(min?: number | null, max?: number | null) {
+  if (typeof min !== "number" || typeof max !== "number") {
+    return "the current timing window";
+  }
+
+  if (max <= 14) {
+    return "1-2 weeks";
+  }
+
+  if (min >= 20 && max <= 35) {
+    return "3-5 weeks";
+  }
+
+  if (min >= 35) {
+    return "5-8 weeks";
+  }
+
+  return `${Math.max(1, Math.round(min / 7))}-${Math.max(1, Math.round(max / 7))} weeks`;
+}
+
+
+function summarizeBreadth(minScore?: number | null) {
+  if (typeof minScore !== "number") {
+    return "current filtering";
+  }
+
+  if (minScore >= 75) {
+    return "stricter filtering";
+  }
+
+  if (minScore <= 55) {
+    return "broader filtering";
+  }
+
+  return "moderate filtering";
+}
+
+
+function summarizeFamiliarity(minConsistency?: number | null) {
+  if (typeof minConsistency !== "number") {
+    return "current familiarity settings";
+  }
+
+  if (minConsistency >= 5) {
+    return "repeat setups";
+  }
+
+  if (minConsistency <= 1) {
+    return "fresh setups";
+  }
+
+  return "some history";
+}
+
+
+function buildSidebarPlanSummary(request: ScanRequest) {
+  const profile = profileLookup[request.profile] ?? labelFromValue(request.profile);
+  const market = tickerLookup[request.ticker_group] ?? labelFromValue(request.ticker_group);
+
+  return [
+    `${profile} scan across ${market} for ${summarizeDirection(request.selected_strategy_keys)}.`,
+    `Expiring in ${summarizeTimingWindow(request.dte_min, request.dte_max)} with ${summarizeBreadth(request.min_score)} and ${summarizeFamiliarity(request.min_consistency)}.`,
+  ];
+}
+
+
 function buildTradeDetailPath(scanId?: string | null, tradeId?: string | null) {
   if (!scanId || !tradeId) {
     return null;
@@ -710,49 +796,26 @@ export function selectSidebarWorkflowModel(
   return {
     modeFrame: mode === "guided"
       ? {
-          eyebrow: "Guided Mode",
-          title: "Tell PRIS what you want",
-          description: "Choose the outcome you want and let the workflow translate it into the existing backend scan request.",
+          eyebrow: "Mode",
+          title: "Guided",
+          description: "Intent-first scan controls.",
         }
       : {
-          eyebrow: "Expert Mode",
-          title: "Direct control surface",
-          description: "Tune the scan request explicitly while keeping the same backend truth and ordering.",
+          eyebrow: "Mode",
+          title: "Expert",
+          description: "Raw controls, same scan contract.",
         },
     readiness,
     planSummary: {
-      title: "Current Plan",
-      lines: mode === "guided"
-        ? [
-            `Intent: ${describeProfileIntent(request.profile)} trades in ${describeTickerUniverse(request.ticker_group)}.`,
-            `Timing: ${describeDteWindow(request.dte_min, request.dte_max)}.`,
-            `Shortlist style: ${describeQualityIntent(request.min_score)} while ${describeConsistencyIntent(request.min_consistency)}.`,
-            `Direction: ${describeDirectionIntent(request.selected_strategy_keys)}.`,
-          ]
-        : [
-            `${profileLookup[request.profile] ?? labelFromValue(request.profile)} profile on ${tickerLookup[request.ticker_group] ?? labelFromValue(request.ticker_group)} names.`,
-            `${request.dte_min}-${request.dte_max} DTE window with score floor ${request.min_score}.`,
-            `${request.min_consistency} minimum consistency requirement across the expert setup.`,
-            strategyLabels.length > 0
-              ? `${strategyLabels.length} strategy${strategyLabels.length === 1 ? "" : "ies"} enabled: ${strategyLabels.join(", ")}.`
-              : "No strategies selected yet.",
-          ],
+      title: "Interpreted Plan",
+      lines: buildSidebarPlanSummary(request),
     },
     interpretedSummary: {
-      title: mode === "guided" ? "What PRIS will scan for" : "Current request interpretation",
-      lines: mode === "guided"
-        ? [
-            `PRIS will scan for ${describeProfileIntent(request.profile)} trades in ${describeTickerUniverse(request.ticker_group)}, ${describeDteWindow(request.dte_min, request.dte_max)}, with ${describeQualityIntent(request.min_score)}.`,
-            `It will look for ${describeDirectionIntent(request.selected_strategy_keys)} while ${describeConsistencyIntent(request.min_consistency)}.`,
-          ]
-        : [
-            `Review ${tickerLookup[request.ticker_group] ?? labelFromValue(request.ticker_group)} using the ${profileLookup[request.profile] ?? labelFromValue(request.profile)} profile lens.`,
-            `Keep opportunities inside a ${request.dte_min}-${request.dte_max} DTE window and discard names under a ${request.min_score} score floor.`,
-            `Require consistency of at least ${request.min_consistency} and evaluate ${strategyLabels.length > 0 ? strategyLabels.join(", ") : "no selected strategies yet"}.`,
-          ],
+      title: "Live Plan",
+      lines: buildSidebarPlanSummary(request),
       helper: mode === "guided"
-        ? "Guided mode keeps the conversation human, but the request still maps to the same thresholds, strategy filters, and ranking contract."
-        : "Expert mode shows the direct field mapping without changing backend-owned ranking logic.",
+        ? "Short labels, same backend mapping."
+        : "Direct fields, unchanged ranking logic.",
     },
     guidedQuestions: [
       {
@@ -777,8 +840,8 @@ export function selectSidebarWorkflowModel(
       },
     ],
     expertNotes: [
-      "Expert mode preserves the same backend contract but exposes threshold and DTE controls directly.",
-      "Changing these fields alters candidate inclusion only; ranking logic still remains server-driven.",
+      "Expert mode exposes raw scan fields inside the same grouped workflow.",
+      "Candidate ranking still stays server-driven.",
     ],
     guardrails: [
       "No score calculations are performed in React.",
