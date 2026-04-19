@@ -93,6 +93,128 @@ function labelFromValue(value?: string | null, fallback = "-") {
 }
 
 
+function describeProfileIntent(profile?: string | null) {
+  switch (String(profile ?? "").trim().toLowerCase()) {
+    case "conservative":
+      return "defensive premium";
+    case "aggressive":
+      return "higher-conviction premium";
+    case "balanced":
+    default:
+      return "balanced premium";
+  }
+}
+
+
+function describeTickerUniverse(tickerGroup?: string | null) {
+  switch (String(tickerGroup ?? "").trim().toLowerCase()) {
+    case "tech":
+      return "big tech";
+    case "index":
+      return "index leaders";
+    case "mixed":
+      return "a mixed watchlist";
+    default:
+      return labelFromValue(tickerGroup, "the current watchlist").toLowerCase();
+  }
+}
+
+
+function describeDirectionIntent(strategyKeys: string[]) {
+  const hasBull = strategyKeys.includes("bull_put_spread");
+  const hasBear = strategyKeys.includes("bear_call_spread");
+
+  if (hasBull && hasBear) {
+    return "either bullish or bearish setups";
+  }
+
+  if (hasBull) {
+    return "bullish setups";
+  }
+
+  if (hasBear) {
+    return "bearish setups";
+  }
+
+  return "the currently selected setup types";
+}
+
+
+function describeDteWindow(min?: number | null, max?: number | null) {
+  if (typeof min !== "number" || typeof max !== "number") {
+    return "within the current expiration window";
+  }
+
+  if (max <= 14) {
+    return "expiring soon, around 1-2 weeks out";
+  }
+
+  if (min >= 20 && max <= 35) {
+    return "expiring in about 3-5 weeks";
+  }
+
+  if (min >= 35) {
+    return "expiring later, around 5-8 weeks out";
+  }
+
+  return `expiring in about ${Math.max(1, Math.round(min / 7))}-${Math.max(1, Math.round(max / 7))} weeks`;
+}
+
+
+function describeQualityIntent(minScore?: number | null) {
+  if (typeof minScore !== "number") {
+    return "the current quality filter";
+  }
+
+  if (minScore >= 75) {
+    return "strict quality filtering";
+  }
+
+  if (minScore <= 55) {
+    return "a broader opportunity filter";
+  }
+
+  return "moderate quality filtering";
+}
+
+
+function describeConsistencyIntent(minConsistency?: number | null) {
+  if (typeof minConsistency !== "number") {
+    return "keeping the current signal-history preference";
+  }
+
+  if (minConsistency >= 5) {
+    return "leaning on setups that have shown up repeatedly";
+  }
+
+  if (minConsistency <= 1) {
+    return "staying open to fresher signals";
+  }
+
+  return "preferring setups that have appeared before";
+}
+
+
+function describeFreshnessLabel(stabilityLevel?: string | null, stabilityCount?: number | null) {
+  if (typeof stabilityCount === "number" && stabilityCount >= 3) {
+    return `Seen ${stabilityCount} times`;
+  }
+
+  const normalized = String(stabilityLevel ?? "").trim().toLowerCase();
+  if (normalized === "stable") {
+    return "Repeated signal";
+  }
+  if (normalized === "emerging") {
+    return "Building history";
+  }
+  if (normalized === "new") {
+    return "Fresh signal";
+  }
+
+  return "Current setup";
+}
+
+
 function buildTradeDetailPath(scanId?: string | null, tradeId?: string | null) {
   if (!scanId || !tradeId) {
     return null;
@@ -196,6 +318,17 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
       direction: labelFromValue(topTrade?.directional_bias, "Neutral"),
       directionTone: toneFromDirection(topTrade?.directional_bias),
       href: buildTradeDetailPath(scanResult.scan_metadata.scan_id, topTrade?.trade_id),
+      story: [
+        qualifiedCount > 0
+          ? `${qualifiedCount} qualified idea(s) cleared the current run and should be reviewed in ranked order.`
+          : "No qualified ideas cleared the current run, so scan health matters more than raw volume today.",
+        alertsCount > 0
+          ? `${alertsCount} alert(s) also surfaced, which may widen the review set beyond the shortlist.`
+          : "No separate alert pressure is building beyond the ranked board right now.",
+        trustTone === "warning"
+          ? "Coverage caveats are present, so treat this cockpit as directional rather than complete."
+          : "Coverage appears healthy, so the top opportunity can be reviewed with higher confidence.",
+      ],
     },
     topTradePreview: topTrade
       ? {
@@ -218,6 +351,7 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
           notes: [
             `Expiration ${topTrade.expiration_date ?? "-"} • DTE ${formatNumber(topTrade.DTE)}`,
             `Premium context ${labelFromValue(topTrade.volatility_context, "Unspecified")}`,
+            `${labelFromValue(topTrade.directional_bias, "Neutral")} posture with ${labelFromValue(topTrade.stability_level, "current").toLowerCase()} signal context.`,
           ],
           href: buildTradeDetailPath(scanResult.scan_metadata.scan_id, topTrade.trade_id),
         }
@@ -250,17 +384,39 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
       concentration: portfolio.topTicker
         ? `${portfolio.topTicker.ticker} ${portfolio.topTicker.share_pct ?? 0}% of current qualified set`
         : "No concentration signal returned.",
+      summaryLine: portfolio.topTicker
+        ? `${portfolio.topTicker.ticker} currently leads concentration inside the qualified set.`
+        : "Portfolio posture is available, but no single ticker concentration was returned.",
     },
     history: {
       runsAnalyzed: historyMetadata.runs_analyzed ?? 0,
       signalsAnalyzed: historyMetadata.signals_analyzed ?? 0,
       latestRun: historyMetadata.latest_run_timestamp ?? "No history yet",
       recurringPatterns: recurringPatterns.slice(0, 3),
+      notes: [
+        recurringPatterns.length > 0
+          ? `${recurringPatterns.length} recurring high-quality pattern(s) are reinforcing this run.`
+          : "Stored history is still thin, so this run should be judged mostly on current conditions.",
+      ],
+    },
+    alertsSnapshot: {
+      total: alertsCount,
+      title: alertsCount > 0 ? "Alert pressure is active" : "No extra alert pressure",
+      notes: alertsCount > 0
+        ? [
+            `${alertsCount} alert(s) are active in parallel with the ranked board.`,
+            qualifiedCount > 0
+              ? "Review the shortlist first, then use alerts to expand the review set if needed."
+              : "Alerts may be the best secondary review surface when the shortlist is thin.",
+          ]
+        : [
+            "Nothing outside the primary shortlist is pushing through the alert thresholds right now.",
+          ],
     },
     nextActions: [
-      { label: "Review qualified board", to: "/qualified" },
-      { label: "Check alerts", to: "/alerts" },
-      { label: "Read portfolio posture", to: "/portfolio" },
+      { label: "Start with the ranked board", to: "/qualified" },
+      { label: "Check whether alerts widen the set", to: "/alerts" },
+      { label: "Confirm portfolio fit before sizing", to: "/portfolio" },
     ],
   };
 }
@@ -271,6 +427,7 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
   const qualifiedTrades = arrayOrEmpty(scanResult.qualified_trades);
   const thresholds = currentScanThresholds(scanResult);
   const portfolio = portfolioPosture(scanResult.portfolio_summary);
+  const concentrationRows = arrayOrEmpty(scanResult.portfolio_summary?.exposure?.qualified?.top_ticker_concentration);
   const caveats = [
     arrayOrEmpty(diagnostics.provider_errors).length > 0
       ? "Provider issues were reported in this run, so the ranked board may be incomplete."
@@ -303,6 +460,15 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
       },
     ],
     caveats,
+    narrative: [
+      qualifiedTrades.length > 0
+        ? `Start at the top card first: ${qualifiedTrades.length} idea(s) cleared the active contract thresholds.`
+        : "This run did not surface any qualified opportunities.",
+      thresholds.minScore !== null && thresholds.minScore !== undefined
+        ? `The shortlist is using ${describeQualityIntent(thresholds.minScore)}.`
+        : "No explicit score floor was returned in the current scan metadata.",
+      portfolio.posture ? `Portfolio posture currently reads as ${portfolio.posture.toLowerCase()}.` : null,
+    ].filter(Boolean) as string[],
     emptyState: arrayOrEmpty(diagnostics.provider_errors).length > 0
       ? {
           title: "Partial results available",
@@ -317,16 +483,24 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
             title: "No qualified trades",
             message: "The latest scan did not produce any qualified opportunities. If you want a wider review set, broaden the ticker group or relax the score threshold.",
           },
-    items: qualifiedTrades.map((trade, index) => ({
+    items: qualifiedTrades.map((trade, index) => {
+      const concentration = concentrationRows.find((row) => row.ticker === trade.ticker) ?? null;
+
+      return {
       id: trade.trade_id ?? `${scanResult.scan_metadata.scan_id}-${index}`,
       href: buildTradeDetailPath(scanResult.scan_metadata.scan_id, trade.trade_id),
       rank: index + 1,
       title: formatTradeLabel(trade),
+      strategyLabel: trade.strategy_label ?? labelFromValue(trade.strategy_type, "Trade"),
       subtitle: `Exp ${trade.expiration_date ?? "-"} • DTE ${formatNumber(trade.DTE)} • ${labelFromValue(trade.volatility_context, "Premium context unavailable")}`,
       direction: labelFromValue(trade.directional_bias, "Neutral"),
       directionTone: toneFromDirection(trade.directional_bias),
       label: labelFromValue(trade.label ?? trade.stability_level, "Candidate"),
       labelTone: toneFromStability(trade.stability_level ?? trade.label),
+      freshnessLabel: describeFreshnessLabel(trade.stability_level, trade.stability_count),
+      freshnessTone: toneFromStability(trade.stability_level),
+      score: formatNumber(fallbackScore(trade)),
+      scoreDetail: thresholdDelta(fallbackScore(trade), thresholds.minScore),
       metrics: [
         {
           label: "Score",
@@ -346,15 +520,38 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
           detail: thresholdDelta(trade.ROR, thresholds.minRor),
           tone: "warning" as const,
         },
+        {
+          label: "DTE",
+          value: formatNumber(trade.DTE),
+          detail: trade.expiration_date ? `Expires ${trade.expiration_date}` : null,
+          tone: "neutral" as const,
+        },
       ],
       quickReview: {
         summary: firstNonEmpty([trade.decision_summary, trade.status_reason, trade.explanation]) ?? "No short review text was provided.",
         structure: [
           `Strikes ${formatNumber(trade.short_strike)} / ${formatNumber(trade.long_strike)}`,
+          `Max risk ${formatCurrency(trade.max_risk)} against ${formatCurrency(trade.net_credit)} credit`,
           `Stability ${labelFromValue(trade.stability_level, "Unknown")}${trade.stability_count !== undefined ? ` (${trade.stability_count})` : ""}`,
         ],
       },
-    })),
+      narrative: [
+        labelFromValue(trade.volatility_context, "Premium context unavailable"),
+        `${labelFromValue(trade.directional_bias, "Neutral")} posture`,
+        describeFreshnessLabel(trade.stability_level, trade.stability_count),
+      ],
+      chartLabel: trade.directional_bias === "bearish" ? "Risk profile skewed defensive" : "Risk profile skewed supportive",
+      riskNote: `Collect ${formatCurrency(trade.net_credit)} to take on up to ${formatCurrency(trade.max_risk)} of defined risk.`,
+      portfolioNote: concentration
+        ? `${trade.ticker} already represents ${concentration.share_pct ?? concentration.count}% of the current qualified set.`
+        : `${portfolio.posture} posture remains the main portfolio framing for this idea.`,
+      riskProfile: {
+        reward: trade.net_credit ?? null,
+        risk: trade.max_risk ?? null,
+      },
+      actionLabel: "Review execution brief",
+      };
+    }),
   };
 }
 
@@ -368,9 +565,9 @@ export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail:
     historicalIntelligence.signal_quality_summary?.recurring_high_quality_patterns,
   );
   const portfolio = portfolioPosture(scanResult.portfolio_summary);
-  const topTickerRows = arrayOrEmpty(scanResult.portfolio_summary.exposure?.qualified?.top_ticker_concentration);
+  const topTickerRows = arrayOrEmpty(scanResult.portfolio_summary?.exposure?.qualified?.top_ticker_concentration);
   const matchingTicker = topTickerRows.find((row) => row.ticker === trade.ticker) ?? null;
-  const sizingWarnings = arrayOrEmpty(scanResult.portfolio_summary.position_sizing?.warnings);
+  const sizingWarnings = arrayOrEmpty(scanResult.portfolio_summary?.position_sizing?.warnings);
   const explanationRows = Object.entries(trade.score_breakdown ?? {})
     .filter(([, value]) => value !== null && value !== undefined && value !== "")
     .slice(0, 4)
@@ -388,6 +585,10 @@ export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail:
     quickVerdict:
       firstNonEmpty([trade.decision_summary, trade.status_reason, trade.explanation]) ??
       "No concise verdict text was returned for this trade.",
+    briefingPoints: [
+      `${labelFromValue(trade.directional_bias, "Neutral")} ${trade.strategy_label ?? labelFromValue(trade.strategy_type, "spread").toLowerCase()} under the ${detail.scan_metadata.profile ?? scanResult.scan_metadata.profile} profile.`,
+      `Current premium context reads ${labelFromValue(trade.volatility_context, "unspecified").toLowerCase()} with ${describeFreshnessLabel(trade.stability_level, trade.stability_count).toLowerCase()}.`,
+    ],
     construction: [
       { label: "Short Strike", value: formatNumber(trade.short_strike) },
       { label: "Long Strike", value: formatNumber(trade.long_strike) },
@@ -396,6 +597,11 @@ export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail:
       { label: "Underlying", value: formatCurrency(trade.underlying_price) },
       { label: "Volatility", value: labelFromValue(trade.volatility_context, "Unspecified") },
     ],
+    strikeMarkers: [
+      { label: "Underlying", value: formatCurrency(trade.underlying_price), detail: "Current reference price" },
+      { label: "Short Strike", value: formatNumber(trade.short_strike), detail: "Primary short leg" },
+      { label: "Long Strike", value: formatNumber(trade.long_strike), detail: "Protective long leg" },
+    ],
     riskReward: [
       { label: "POP", value: formatNumber(trade.POP), tone: "success" as const },
       { label: "ROR", value: formatNumber(trade.ROR), tone: "warning" as const },
@@ -403,6 +609,15 @@ export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail:
       { label: "Spread Width", value: formatNumber(trade.spread_width), tone: "neutral" as const },
       { label: "Max Risk", value: formatCurrency(trade.max_risk), tone: "danger" as const },
       { label: "Score", value: formatNumber(fallbackScore(trade)), tone: "accent" as const },
+    ],
+    executionPrep: [
+      `Target expiration: ${trade.expiration_date ?? "Unknown"}`,
+      `Spread width: ${formatNumber(trade.spread_width)} with estimated max risk ${formatCurrency(trade.max_risk)}.`,
+      `Current POP / ROR reads ${formatNumber(trade.POP)} / ${formatNumber(trade.ROR)}.`,
+    ],
+    riskStory: [
+      `Defined risk is capped near ${formatCurrency(trade.max_risk)} while the current credit reads ${formatCurrency(trade.net_credit)}.`,
+      `The setup expires ${trade.expiration_date ?? "on an unspecified date"} with ${formatNumber(trade.DTE)} DTE in view.`,
     ],
     whyThisTrade: [
       trade.status_reason,
@@ -433,10 +648,18 @@ export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail:
         matchingTicker
           ? `${matchingTicker.ticker} represents ${matchingTicker.share_pct ?? 0}% of the current qualified set.`
           : null,
-        ...arrayOrEmpty(scanResult.portfolio_summary.exposure?.notes).slice(0, 1),
+        ...arrayOrEmpty(scanResult.portfolio_summary?.exposure?.notes).slice(0, 1),
         ...sizingWarnings.slice(0, 1),
       ].filter(Boolean) as string[],
     },
+    historyStory: [
+      recurringPatterns.length > 0
+        ? `Recurring history exists for ${recurringPatterns.length} high-quality pattern(s), which adds context but not certainty.`
+        : "History is currently thin, so this trade should be judged mostly on the current run.",
+      matchingTicker
+        ? `${matchingTicker.ticker} is already present in the run-level concentration view.`
+        : null,
+    ].filter(Boolean) as string[],
     diagnostics: {
       tone: detail.diagnostics.provider_errors?.length ? ("warning" as const) : ("info" as const),
       title: detail.diagnostics.provider_errors?.length ? "Scan caveats present" : "Scan context",
@@ -488,8 +711,8 @@ export function selectSidebarWorkflowModel(
     modeFrame: mode === "guided"
       ? {
           eyebrow: "Guided Mode",
-          title: "Workflow-first setup",
-          description: "Use the higher-signal controls first and keep the scan request easy to reason about.",
+          title: "Tell PRIS what you want",
+          description: "Choose the outcome you want and let the workflow translate it into the existing backend scan request.",
         }
       : {
           eyebrow: "Expert Mode",
@@ -499,15 +722,69 @@ export function selectSidebarWorkflowModel(
     readiness,
     planSummary: {
       title: "Current Plan",
-      lines: [
-        `${profileLookup[request.profile] ?? labelFromValue(request.profile)} profile on ${tickerLookup[request.ticker_group] ?? labelFromValue(request.ticker_group)} names.`,
-        `${request.dte_min}-${request.dte_max} DTE window with score floor ${request.min_score}.`,
-        `${request.min_consistency} minimum consistency requirement${mode === "guided" ? " for guided review" : " across the expert setup"}.`,
-        strategyLabels.length > 0
-          ? `${strategyLabels.length} strategy${strategyLabels.length === 1 ? "" : "ies"} enabled: ${strategyLabels.join(", ")}.`
-          : "No strategies selected yet.",
-      ],
+      lines: mode === "guided"
+        ? [
+            `Intent: ${describeProfileIntent(request.profile)} trades in ${describeTickerUniverse(request.ticker_group)}.`,
+            `Timing: ${describeDteWindow(request.dte_min, request.dte_max)}.`,
+            `Shortlist style: ${describeQualityIntent(request.min_score)} while ${describeConsistencyIntent(request.min_consistency)}.`,
+            `Direction: ${describeDirectionIntent(request.selected_strategy_keys)}.`,
+          ]
+        : [
+            `${profileLookup[request.profile] ?? labelFromValue(request.profile)} profile on ${tickerLookup[request.ticker_group] ?? labelFromValue(request.ticker_group)} names.`,
+            `${request.dte_min}-${request.dte_max} DTE window with score floor ${request.min_score}.`,
+            `${request.min_consistency} minimum consistency requirement across the expert setup.`,
+            strategyLabels.length > 0
+              ? `${strategyLabels.length} strategy${strategyLabels.length === 1 ? "" : "ies"} enabled: ${strategyLabels.join(", ")}.`
+              : "No strategies selected yet.",
+          ],
     },
+    interpretedSummary: {
+      title: mode === "guided" ? "What PRIS will scan for" : "Current request interpretation",
+      lines: mode === "guided"
+        ? [
+            `PRIS will scan for ${describeProfileIntent(request.profile)} trades in ${describeTickerUniverse(request.ticker_group)}, ${describeDteWindow(request.dte_min, request.dte_max)}, with ${describeQualityIntent(request.min_score)}.`,
+            `It will look for ${describeDirectionIntent(request.selected_strategy_keys)} while ${describeConsistencyIntent(request.min_consistency)}.`,
+          ]
+        : [
+            `Review ${tickerLookup[request.ticker_group] ?? labelFromValue(request.ticker_group)} using the ${profileLookup[request.profile] ?? labelFromValue(request.profile)} profile lens.`,
+            `Keep opportunities inside a ${request.dte_min}-${request.dte_max} DTE window and discard names under a ${request.min_score} score floor.`,
+            `Require consistency of at least ${request.min_consistency} and evaluate ${strategyLabels.length > 0 ? strategyLabels.join(", ") : "no selected strategies yet"}.`,
+          ],
+      helper: mode === "guided"
+        ? "Guided mode keeps the conversation human, but the request still maps to the same thresholds, strategy filters, and ranking contract."
+        : "Expert mode shows the direct field mapping without changing backend-owned ranking logic.",
+    },
+    guidedQuestions: [
+      {
+        step: "01",
+        title: "What kind of premium setup feels right today?",
+        description: "Choose the overall posture first so PRIS knows how selective and defensive to be.",
+      },
+      {
+        step: "02",
+        title: "Which part of the market should PRIS search?",
+        description: "Pick the watchlist and the direction you care about before worrying about the details.",
+      },
+      {
+        step: "03",
+        title: "When should the trade expire?",
+        description: "Use a simple timing preference instead of thinking in raw DTE ranges.",
+      },
+      {
+        step: "04",
+        title: "How selective should the shortlist feel?",
+        description: "Decide whether you want a broader list, tighter quality filtering, or more repeated signals.",
+      },
+    ],
+    expertNotes: [
+      "Expert mode preserves the same backend contract but exposes threshold and DTE controls directly.",
+      "Changing these fields alters candidate inclusion only; ranking logic still remains server-driven.",
+    ],
+    guardrails: [
+      "No score calculations are performed in React.",
+      "Alert eligibility remains backend-owned.",
+      "Portfolio posture is displayed, not inferred client-side.",
+    ],
     latestSnapshot: latestScan
       ? {
           profile: latestScan.scan_metadata.profile,

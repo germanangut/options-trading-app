@@ -42,6 +42,46 @@ The app is intended for **analysis and decision support**:
 
 A lightweight productization posture definition lives in `infra/product_readiness.yaml`. It documents the app's current stage, intended internal usage model, boundaries, current deployment readiness, and the key requirements before wider sharing. The current deployment target decision is documented in `infra/deployment_target.md`.
 
+## Frontend UX-FINAL notes
+
+The React frontend in `frontend/` now follows a presentation-only decision workspace model. Backend scoring, qualification, alerts, and portfolio interpretation remain backend-owned; the frontend selector layer only reshapes that payload for review workflows.
+
+UX-FINAL Phase 2 is a mockup-fidelity pass on top of that foundation. It does not introduce new trading logic or new product features; it narrows the gap between the live UI and the intended decision-support storytelling language.
+
+UX-FINAL Phase 3 is the final visual-storytelling and micro-polish pass. It keeps the same contracts and workflows, but pushes the UI from premium structured data toward a more orchestrated decision-support surface with clearer hierarchy, stronger explanatory graphics, and tighter layout rhythm.
+
+- `Sidebar` supports two operating modes: `guided` for workflow-first setup and `expert` for direct threshold control
+- `Qualified Trades` is the primary ranked review surface and should preserve backend ordering without client-side re-ranking
+- `Qualified Trade Detail` is positioned as execution preparation, with verdict, structure, and checklist framing derived from selector output
+- Shared shell and semantic states should continue to surface partial, degraded, healthy-empty, and failed runs from the existing diagnostics contract
+- Reusable premium UI primitives live under `frontend/src/components/ui` and should be preferred over page-local shells for future UX work
+
+Phase 2 wording and composition principles:
+
+- Guided mode should ask for intent, not raw parameters; prefer plain-language choices such as timing, direction, and shortlist strictness
+- Expert mode should stay technical and precise; raw threshold labels belong there, not in Guided mode
+- Trade cards should read as self-contained decision stories: identity, why it qualified, risk shape, portfolio fit, and next action
+- Trade detail should feel like a continuous execution briefing rather than a stack of unrelated sections
+- Overview should behave like a cockpit for the latest run, emphasizing what happened, what matters, and what to review next
+- If a concept appears on multiple pages, reuse the same containment, chip language, warning placement, and action placement where possible
+
+Phase 3 visual storytelling principles:
+
+- Use explanatory visuals only when they help the operator understand quality, payoff shape, risk posture, or portfolio impact more quickly
+- Prefer a small set of reusable primitives over page-local decoration; current explanatory primitives include `ScoreRibbon`, `MiniPayoffCue`, and `PortfolioImpactBand`
+- Put the most decision-relevant object first: top opportunity, risk cue, trust state, or action guidance should be obvious at a glance
+- Keep warning states visible but controlled; caution should read as guidance, not alarm fatigue
+- Guided mode should feel like intent selection, while Expert mode should feel like a compact technical console
+- Decorative UI adds style without reducing cognitive effort; explanatory UI earns its place by helping the user read the decision faster or more accurately
+
+Frontend validation commands:
+
+```bash
+cd frontend
+npm test
+npm run build
+```
+
 ## Quick start
 
 ### 1) Create and activate a virtual environment

@@ -7,5 +7,5 @@ type ActionRowProps = PropsWithChildren<{
 
 
 export function ActionRow({ children, className }: ActionRowProps) {
-  return <div className={["flex flex-wrap gap-2", className].filter(Boolean).join(" ")}>{children}</div>;
+  return <div className={["flex flex-wrap items-center gap-3", className].filter(Boolean).join(" ")}>{children}</div>;
 }

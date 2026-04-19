@@ -13,16 +13,18 @@ type SectionFrameProps = PropsWithChildren<{
 
 export function SectionFrame({ eyebrow, title, subtitle, actions, className, children }: SectionFrameProps) {
   return (
-    <section className={clsx("rounded-panel border border-slate-200 bg-white p-5 shadow-panel", className)}>
-      <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-        <div>
-          {eyebrow ? <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-ink-3">{eyebrow}</p> : null}
-          <h2 className="mt-1 text-lg font-semibold text-ink-1">{title}</h2>
-          {subtitle ? <p className="mt-1 text-sm text-ink-2">{subtitle}</p> : null}
+    <section className={clsx("panel-shell panel-glow relative overflow-hidden p-5 sm:p-6", className)}>
+      <div className="absolute inset-0 app-grid-glow opacity-15" aria-hidden="true" />
+      <div className="absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/15 to-transparent" aria-hidden="true" />
+      <div className="relative mb-5 flex flex-wrap items-start justify-between gap-4 border-b border-white/6 pb-4">
+        <div className="space-y-1.5">
+          {eyebrow ? <p className="eyebrow-label">{eyebrow}</p> : null}
+          <h2 className="text-lg font-semibold tracking-tight text-ink-1 sm:text-xl">{title}</h2>
+          {subtitle ? <p className="max-w-3xl text-sm leading-6 text-ink-3">{subtitle}</p> : null}
         </div>
         {actions}
       </div>
-      {children}
+      <div className="relative">{children}</div>
     </section>
   );
 }

@@ -1,6 +1,6 @@
-import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ScanResult } from "../types/api";
 import { QualifiedTradesPage } from "./QualifiedTradesPage";
@@ -12,6 +12,10 @@ vi.mock("../features/scans/hooks/useLatestScan", () => ({
 
 
 const { useLatestScan } = await import("../features/scans/hooks/useLatestScan");
+
+afterEach(() => {
+  cleanup();
+});
 
 
 function buildPartialScan(): ScanResult {
@@ -113,5 +117,67 @@ describe("QualifiedTradesPage", () => {
     expect(
       screen.getByText("The latest scan did not produce any qualified opportunities. If you want a wider review set, broaden the ticker group or relax the score threshold."),
     ).toBeInTheDocument();
+  });
+
+  it("renders contained ranked trade cards for qualified opportunities", () => {
+    const scan = buildPartialScan();
+    scan.diagnostics = {
+      ...scan.diagnostics,
+      missing_tickers: [],
+      partial_result: false,
+    };
+    scan.summary = {
+      qualified_count: 1,
+      near_miss_count: 0,
+      top_overall: null,
+      top_bull_put: null,
+      top_bear_call: null,
+    };
+    scan.qualified_trades = [
+      {
+        trade_id: "trade_1",
+        ticker: "AAPL",
+        strategy_type: "bull_put_spread",
+        strategy_label: "Bull Put Spread",
+        expiration_date: "2026-05-15",
+        DTE: 28,
+        short_strike: 180,
+        long_strike: 175,
+        POP: 67,
+        ROR: 22,
+        score: 72,
+        adjusted_score: 74,
+        label: "High Quality",
+        decision_summary: "Constructive premium with steady support.",
+        directional_bias: "bullish",
+        status_reason: "Support held on repeated checks.",
+        volatility_context: "balanced_premium",
+        stability_level: "stable",
+        stability_count: 3,
+        net_credit: 1.45,
+        spread_width: 5,
+        max_risk: 355,
+      },
+    ];
+
+    vi.mocked(useLatestScan).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: scan,
+    } as ReturnType<typeof useLatestScan>);
+
+    render(
+      <MemoryRouter>
+        <QualifiedTradesPage />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getAllByText("Ranked decision board").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("AAPL - Bull Put Spread").length).toBeGreaterThan(0);
+    expect(screen.getByText("Quality ribbon")).toBeInTheDocument();
+    expect(screen.getByText("Why It Qualified")).toBeInTheDocument();
+    expect(screen.getByText("Risk Frame")).toBeInTheDocument();
+    expect(screen.getByText("Portfolio Impact")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /review execution brief/i })).toHaveAttribute("href", "/scans/scan_partial/trades/trade_1");
   });
 });

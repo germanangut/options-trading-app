@@ -22,11 +22,12 @@ export function AppShell() {
 
   return (
     <div className="min-h-screen bg-surface-0 text-ink-1">
-      <div className="grid min-h-screen lg:grid-cols-[280px_minmax(0,1fr)]">
+      <div className="grid min-h-screen lg:grid-cols-[320px_minmax(0,1fr)]">
         <Sidebar />
         <div className="flex min-h-screen min-w-0 flex-col">
           <Topbar pathname={location.pathname} />
-          <main className="flex-1 p-4 sm:p-6 lg:p-8">
+          <main className="relative flex-1 overflow-hidden p-4 sm:p-6 lg:p-8">
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,189,89,0.08),transparent_18%),radial-gradient(circle_at_center_left,rgba(57,192,187,0.08),transparent_24%)]" aria-hidden="true" />
             <div className="mx-auto flex w-full max-w-7xl flex-col gap-6">
               {scanActivity.isRunning ? (
                 <Banner tone="info" title="Scan running">

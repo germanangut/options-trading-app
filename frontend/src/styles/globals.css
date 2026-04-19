@@ -4,7 +4,8 @@
 
 @layer base {
   * {
-    @apply border-slate-200;
+    @apply border-white/10;
+    box-sizing: border-box;
   }
 
   html,
@@ -14,7 +15,11 @@
   }
 
   body {
-    @apply m-0 bg-surface-0 font-sans text-ink-1 antialiased;
+    background:
+      radial-gradient(circle at top left, rgba(57, 192, 187, 0.18), transparent 28%),
+      radial-gradient(circle at top right, rgba(255, 189, 89, 0.12), transparent 22%),
+      linear-gradient(180deg, rgb(var(--surface-1)) 0%, rgb(var(--surface-0)) 100%);
+    @apply m-0 font-sans text-ink-1 antialiased;
   }
 
   button,
@@ -27,5 +32,54 @@
   a {
     color: inherit;
     text-decoration: none;
+  }
+
+  ::selection {
+    background: rgb(var(--accent) / 0.24);
+    color: rgb(var(--ink-1));
+  }
+}
+
+@layer components {
+  .app-grid-glow {
+    background-image:
+      linear-gradient(rgb(255 255 255 / 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgb(255 255 255 / 0.03) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .panel-shell {
+    @apply rounded-panel border shadow-panel backdrop-blur;
+    border-color: rgb(255 255 255 / 0.1);
+    background-color: rgb(var(--surface-1) / 0.92);
+  }
+
+  .panel-subtle {
+    @apply rounded-card border shadow-elevated backdrop-blur;
+    border-color: rgb(255 255 255 / 0.08);
+    background-color: rgb(var(--surface-2) / 0.8);
+  }
+
+  .panel-glow {
+    box-shadow:
+      inset 0 1px 0 rgb(255 255 255 / 0.04),
+      0 18px 36px rgb(2 6 23 / 0.28);
+  }
+
+  .metric-value {
+    @apply text-2xl font-semibold tracking-tight text-ink-1;
+  }
+
+  .eyebrow-label {
+    @apply text-[0.68rem] font-semibold uppercase tracking-[0.22em] text-ink-4;
+  }
+
+  .interactive-border {
+    @apply transition duration-200;
+  }
+
+  .interactive-border:hover {
+    border-color: rgb(255 255 255 / 0.2);
+    background-color: rgb(var(--surface-2) / 0.95);
   }
 }

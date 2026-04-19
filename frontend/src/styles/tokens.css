@@ -1,17 +1,37 @@
 :root {
-  --surface-0: 245 247 250;
-  --surface-1: 255 255 255;
-  --surface-2: 238 242 247;
+  --surface-0: 6 11 20;
+  --surface-1: 12 18 30;
+  --surface-2: 18 27 43;
+  --surface-3: 29 40 61;
+  --surface-overlay: 8 13 24;
 
-  --ink-1: 15 23 42;
-  --ink-2: 71 85 105;
-  --ink-3: 100 116 139;
+  --ink-1: 241 245 249;
+  --ink-2: 192 205 224;
+  --ink-3: 129 148 175;
+  --ink-4: 92 111 141;
 
-  --accent: 15 118 110;
-  --accent-soft: 204 251 241;
-  --success: 22 163 74;
-  --warning: 217 119 6;
-  --danger: 225 29 72;
+  --accent: 57 192 187;
+  --accent-soft: 16 74 79;
+  --success: 61 211 145;
+  --success-soft: 14 67 50;
+  --warning: 255 189 89;
+  --warning-soft: 87 56 18;
+  --danger: 255 110 132;
+  --danger-soft: 95 30 46;
+  --bullish: 88 214 141;
+  --bearish: 255 163 102;
+  --neutral-soft: 46 63 91;
 
-  --radius-panel: 1rem;
+  --radius-panel: 1.25rem;
+  --radius-card: 1rem;
+  --radius-pill: 999px;
+
+  --space-xs: 0.375rem;
+  --space-sm: 0.625rem;
+  --space-md: 1rem;
+  --space-lg: 1.5rem;
+  --space-xl: 2rem;
+
+  --shadow-panel: 0 24px 70px rgba(2, 6, 23, 0.45);
+  --shadow-elevated: 0 16px 40px rgba(2, 6, 23, 0.35);
 }

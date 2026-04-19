@@ -1,7 +1,9 @@
-import { Banner } from "../components/ui/Banner";
 import { Card } from "../components/ui/Card";
 import { Chip } from "../components/ui/Chip";
 import { EmptyState } from "../components/ui/EmptyState";
+import { PageShell } from "../components/ui/PageShell";
+import { PartialResultBanner } from "../components/ui/PartialResultBanner";
+import { WarningBand } from "../components/ui/WarningBand";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectAlertsModel } from "../features/scans/selectors/scanSelectors";
 import { describeApiError } from "../lib/apiErrors";
@@ -16,9 +18,9 @@ export function AlertsPage() {
 
   if (latestScan.isError) {
     return (
-      <Banner tone="danger" title="Unable to load alerts">
+      <WarningBand tone="danger" title="Unable to load alerts">
         {describeApiError(latestScan.error, "load", "alerts").message}
-      </Banner>
+      </WarningBand>
     );
   }
 
@@ -29,43 +31,47 @@ export function AlertsPage() {
   const alerts = selectAlertsModel(latestScan.data);
 
   return (
-    <div className="grid gap-4">
+    <PageShell
+      eyebrow="Alerts"
+      title="Alert surface"
+      description="Trade alerts remain backend-owned; this page focuses on reading priority, partial coverage, and concise explanations."
+    >
       {alerts.partialNotice ? (
-        <Banner tone="warning" title={alerts.partialNotice.title}>
-          {alerts.partialNotice.message}
-        </Banner>
+        <PartialResultBanner title={alerts.partialNotice.title} message={alerts.partialNotice.message} />
       ) : null}
 
-      <Card title="Alerts" subtitle={`${alerts.total} alert(s) currently surfaced by the backend.`}>
+      <Card eyebrow="Live Alert Feed" title="Alerts" subtitle={`${alerts.total} alert(s) currently surfaced by the backend.`}>
         {alerts.rows.length === 0 ? (
           <EmptyState
             title={alerts.emptyState.title}
             message={alerts.emptyState.message}
+            tone={alerts.partialNotice ? "warning" : "neutral"}
           />
         ) : (
           <div className="grid gap-3">
             {alerts.rows.map(({ id, trade, score, tag }) => (
               <div
                 key={id}
-                className="rounded-xl border border-slate-200 bg-surface-0 p-4"
+                className="rounded-card border border-white/8 bg-surface-overlay/60 p-4 shadow-elevated"
               >
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <h3 className="text-base font-semibold text-ink-1">{formatTradeLabel(trade)}</h3>
-                    <p className="text-sm text-ink-2">
-                      Score {formatNumber(score)} - POP {formatNumber(trade.POP)} - ROR {formatNumber(trade.ROR)}
+                    <p className="text-sm text-ink-3">
+                      Score {formatNumber(score)} • POP {formatNumber(trade.POP)} • ROR {formatNumber(trade.ROR)}
                     </p>
                   </div>
                   <Chip tone="neutral">{tag}</Chip>
                 </div>
                 {trade.decision_summary ? (
-                  <p className="mt-3 text-sm text-ink-2">{trade.decision_summary}</p>
+                  <div className="mt-3 rounded-card border border-white/8 bg-surface-2/70 px-3 py-3 text-sm text-ink-2">{trade.decision_summary}</div>
                 ) : null}
+                <p className="mt-3 text-xs leading-5 text-ink-4">Alerts widen the review set. Keep the ranked board as the primary order of operations when both surfaces are active.</p>
               </div>
             ))}
           </div>
         )}
       </Card>
-    </div>
+    </PageShell>
   );
 }

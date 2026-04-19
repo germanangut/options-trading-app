@@ -1,7 +1,8 @@
-import { Banner } from "../components/ui/Banner";
 import { Card } from "../components/ui/Card";
 import { EmptyState } from "../components/ui/EmptyState";
 import { MetricCard } from "../components/ui/MetricCard";
+import { PageShell } from "../components/ui/PageShell";
+import { WarningBand } from "../components/ui/WarningBand";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectHistoryModel, selectScanReliabilityNotice } from "../features/scans/selectors/scanSelectors";
 import { describeApiError } from "../lib/apiErrors";
@@ -15,9 +16,9 @@ export function HistoryPage() {
 
   if (latestScan.isError) {
     return (
-      <Banner tone="danger" title="Unable to load history">
+      <WarningBand tone="danger" title="Unable to load history">
         {describeApiError(latestScan.error, "load", "history").message}
-      </Banner>
+      </WarningBand>
     );
   }
 
@@ -29,24 +30,24 @@ export function HistoryPage() {
   const reliabilityNotice = selectScanReliabilityNotice(latestScan.data);
 
   return (
-    <div className="grid gap-6">
+    <PageShell eyebrow="History" title="Historical context" description="Recent pattern and frequency context from the current stored-run summary.">
       {reliabilityNotice ? (
-        <Banner tone={reliabilityNotice.tone} title={reliabilityNotice.title}>
+        <WarningBand tone={reliabilityNotice.tone} title={reliabilityNotice.title}>
           {reliabilityNotice.message}
-        </Banner>
+        </WarningBand>
       ) : null}
       <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {history.summaryCards.map((card) => (
-          <MetricCard key={card.label} label={card.label} value={card.value} />
+          <MetricCard key={card.label} label={card.label} value={card.value} tone="neutral" />
         ))}
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card title="Recent Patterns" subtitle="Recurring names from the backend history summary.">
+        <Card eyebrow="Recurring Quality" title="Recent Patterns" subtitle="Recurring names from the backend history summary.">
           {history.recentPatterns.length > 0 ? (
             <div className="grid gap-3">
               {history.recentPatterns.map((pattern) => (
-                <div key={pattern.pattern} className="rounded-xl border border-slate-200 bg-surface-0 p-4 text-sm text-ink-2">
+                <div key={pattern.pattern} className="rounded-card border border-white/8 bg-surface-overlay/60 p-4 text-sm text-ink-2">
                   <p className="font-semibold text-ink-1">{pattern.pattern}</p>
                   <p className="mt-1">Count: {pattern.count}</p>
                   <p>Avg Score: {pattern.average_adjusted_score ?? "-"}</p>
@@ -58,14 +59,14 @@ export function HistoryPage() {
           )}
         </Card>
 
-        <Card title="Recent Leaders" subtitle="Simple history readout for ticker and strategy frequency.">
+        <Card eyebrow="Frequency Leaders" title="Recent Leaders" subtitle="Simple history readout for ticker and strategy frequency.">
           <div className="grid gap-4 md:grid-cols-2">
             <div>
               <p className="mb-3 text-sm font-semibold text-ink-1">Top Tickers</p>
               {history.topTickers.length > 0 ? (
                 <ul className="grid gap-2 text-sm text-ink-2">
                   {history.topTickers.map((row, index) => (
-                    <li key={`${row.ticker}-${index}`} className="rounded-xl bg-surface-2 px-3 py-2">
+                    <li key={`${row.ticker}-${index}`} className="rounded-card border border-white/8 bg-surface-overlay/60 px-3 py-2">
                       {row.ticker ?? "Unknown"} - {row.count}
                     </li>
                   ))}
@@ -79,7 +80,7 @@ export function HistoryPage() {
               {history.topStrategies.length > 0 ? (
                 <ul className="grid gap-2 text-sm text-ink-2">
                   {history.topStrategies.map((row, index) => (
-                    <li key={`${row.strategy}-${index}`} className="rounded-xl bg-surface-2 px-3 py-2">
+                    <li key={`${row.strategy}-${index}`} className="rounded-card border border-white/8 bg-surface-overlay/60 px-3 py-2">
                       {row.strategy ?? "Unknown"} - {row.count}
                     </li>
                   ))}
@@ -89,8 +90,12 @@ export function HistoryPage() {
               )}
             </div>
           </div>
+          <div className="mt-4 rounded-card border border-white/8 bg-surface-overlay/60 px-4 py-3 text-sm text-ink-2">
+            Use these repeat names as context for confidence and familiarity, not as a client-side ranking override.
+          </div>
+          <p className="mt-3 text-xs leading-5 text-ink-4">History should support pattern recognition without overpowering the current-run evidence.</p>
         </Card>
       </section>
-    </div>
+    </PageShell>
   );
 }
