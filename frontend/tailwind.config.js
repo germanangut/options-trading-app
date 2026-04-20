@@ -3,7 +3,7 @@ export default {
     theme: {
         extend: {
             fontFamily: {
-                sans: ["Segoe UI Variable", "Aptos", "Trebuchet MS", "Verdana", "sans-serif"],
+                sans: ["Public Sans", "sans-serif"],
             },
             colors: {
                 surface: {

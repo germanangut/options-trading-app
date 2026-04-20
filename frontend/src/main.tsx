@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import "@fontsource/public-sans/index.css";
 
 import { AppProviders } from "./app/providers";
 import { AppRouter } from "./app/router";

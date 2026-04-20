@@ -5,6 +5,11 @@ export default defineConfig({
   fullyParallel: false,
   retries: 0,
   reporter: "list",
+  expect: {
+    toHaveScreenshot: {
+      pathTemplate: "{testDir}/{testFilePath}-snapshots/{arg}{-projectName}{ext}",
+    },
+  },
   use: {
     baseURL: "http://127.0.0.1:4174",
     trace: "on-first-retry",
@@ -13,7 +18,7 @@ export default defineConfig({
   webServer: {
     command: "npm run dev -- --host 127.0.0.1 --port 4174 --strictPort",
     url: "http://127.0.0.1:4174/login",
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 120000,
   },
   projects: [
