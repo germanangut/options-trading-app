@@ -22,7 +22,7 @@ export function QualifiedTradeDetailPage() {
   const detailQuery = useTradeDetail(scanId, tradeId);
 
   if (scanQuery.isLoading || detailQuery.isLoading) {
-    return <EmptyState title="Loading trade detail" message="Waiting for the trade detail contract and scan context." />;
+    return <EmptyState title="Loading trade detail" message="Waiting for the trade brief and scan context." />;
   }
 
   if (scanQuery.isError || detailQuery.isError) {
@@ -43,17 +43,20 @@ export function QualifiedTradeDetailPage() {
 
   if (!scanQuery.data || !detailQuery.data) {
     return (
-      <EmptyState title="Trade not found" message="The trade detail route is explicit, but the backend did not return a matching trade for this scan." />
+      <EmptyState title="Trade not found" message="This route is valid, but the current scan did not return a matching trade." />
     );
   }
 
   const model = selectTradeDetailExperienceModel(scanQuery.data, detailQuery.data);
+  const supportNotes = model.whyThisTrade.slice(0, 4);
+  const contextNotes = [...model.stability.notes, ...model.historyStory, ...model.portfolioImpact.notes.slice(1)].slice(0, 4);
 
   return (
     <PageShell
       eyebrow="Trade Detail"
       title={model.header.title}
       description={model.header.subtitle}
+      className="gap-4"
       actions={
         <ActionRow>
           <Chip tone={model.header.directionTone}>{model.header.direction}</Chip>
@@ -61,12 +64,12 @@ export function QualifiedTradeDetailPage() {
         </ActionRow>
       }
     >
-      <SectionFrame eyebrow="Execution Briefing" title="One-glance trade brief" subtitle="Understand the setup immediately, then move deeper without losing the story.">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
+      <SectionFrame eyebrow="Execution briefing" title="One-glance trade brief" subtitle="Understand the setup immediately, then move deeper without losing the execution story.">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.15fr)_minmax(0,0.85fr)]">
           <div className="space-y-4">
-            <ChartPanel title="Why this trade surfaced" subtitle="The backend-provided explanation remains the authority for why this idea is on the board." className="bg-surface-1/92">
+            <ChartPanel title="Why this trade surfaced" subtitle="Use this brief to decide whether the setup still deserves a full execution review." className="bg-surface-1/92">
               <div className="space-y-4">
-                <p className="text-base leading-7 text-ink-1">{model.quickVerdict}</p>
+                <p className="text-sm leading-6 text-ink-1 sm:text-[0.95rem]">{model.quickVerdict}</p>
                 <div className="grid gap-2">
                   {model.briefingPoints.map((point) => (
                     <div key={point} className="rounded-card border border-white/8 bg-surface-2/70 px-3 py-2 text-sm text-ink-2">
@@ -96,14 +99,14 @@ export function QualifiedTradeDetailPage() {
                 risk={detailQuery.data.trade.max_risk}
                 rewardLabel="Net credit"
                 riskLabel="Max risk"
-                subtitle="The cue is explanatory only; the trade-detail payload remains the source of truth."
+                subtitle="Use the credit against the defined downside to decide whether the structure still earns deeper review."
               />
             </ChartPanel>
           </div>
 
           <div className="space-y-4">
             <ScoreRibbon score={model.riskReward.find((item) => item.label === "Score")?.value ?? "-"} detail="Read this first, then confirm structure, payout, and concentration." label="Decision Quality" />
-            <ChartPanel title="Primary decision numbers" subtitle="Read the score and risk block before going deeper into structure.">
+            <ChartPanel title="Primary decision numbers" subtitle="Read the score and risk block first, then confirm structure and concentration.">
               <div className="space-y-4">
                 <MetricStrip items={model.riskReward} columns={3} />
                 <div className="grid gap-2 text-sm text-ink-2">
@@ -125,8 +128,8 @@ export function QualifiedTradeDetailPage() {
         </div>
       </SectionFrame>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
-        <SectionFrame eyebrow="Trade Construction" title="Contract structure" subtitle="Read the spread map before making a sizing decision.">
+      <section className="grid gap-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
+        <SectionFrame eyebrow="Trade construction" title="Structure at a glance" subtitle="Read the spread map before making a sizing decision.">
           <div className="space-y-4">
             <MetricStrip items={model.construction.map((item) => ({ ...item, tone: "neutral" as const }))} columns={3} />
             <ChartPanel title="Strike ladder" subtitle="Use this quick visual ordering to anchor the underlying price against the spread legs.">
@@ -145,7 +148,7 @@ export function QualifiedTradeDetailPage() {
           </div>
         </SectionFrame>
 
-        <SectionFrame eyebrow="Execution Checklist" title="What to confirm next" subtitle="A concise operator checklist built only from current trade-detail values.">
+        <SectionFrame eyebrow="Execution checklist" title="What to confirm next" subtitle="A concise operator checklist built from the current trade values.">
           <div className="space-y-4">
             <ChartPanel title="Checklist" subtitle="Move through these items before acting on the trade.">
               <div className="grid gap-2">
@@ -159,31 +162,31 @@ export function QualifiedTradeDetailPage() {
             <ChartPanel title="Risk profile" subtitle="Compact framing for reward, credit, and downside before execution.">
               <div className="space-y-4">
                 <MiniPayoffCue reward={detailQuery.data.trade.net_credit} risk={detailQuery.data.trade.max_risk} rewardLabel="Credit" riskLabel="Risk" size="sm" />
-                <p className="text-sm leading-6 text-ink-2">Defined risk stays capped; use the checklist and history context to decide whether the setup still deserves attention.</p>
+                <p className="text-sm leading-6 text-ink-2">Defined risk stays capped; use the checklist and context below to decide whether the setup still deserves attention.</p>
               </div>
             </ChartPanel>
           </div>
         </SectionFrame>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
-        <SectionFrame eyebrow="Why This Trade" title="Supporting signals" subtitle="Explanation fields and score-breakdown rows already present in the payload.">
-          {model.whyThisTrade.length > 0 ? (
+      <section className="grid gap-3 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,0.9fr)]">
+        <SectionFrame eyebrow="Supporting case" title="Supporting signals" subtitle="Keep this section tight: it should confirm the setup, not compete with the brief above.">
+          {supportNotes.length > 0 ? (
             <ul className="grid gap-2 text-sm text-ink-2">
-              {model.whyThisTrade.map((line) => (
+              {supportNotes.map((line) => (
                 <li key={line} className="rounded-card border border-white/8 bg-surface-overlay/60 px-3 py-3">{line}</li>
               ))}
             </ul>
           ) : (
-            <EmptyState title="No rationale provided" message="The trade-detail payload did not return additional explanation rows." />
+            <EmptyState title="No supporting rationale" message="No additional explanation rows were returned for this trade." />
           )}
         </SectionFrame>
 
-        <SectionFrame eyebrow="History / Portfolio" title="Context from this scan and current history payload" subtitle="Use history and portfolio notes as decision context, not as separate ranking logic.">
+        <SectionFrame eyebrow="Confidence context" title="History and portfolio context" subtitle="Use repeat context and concentration as confirmation, not as a replacement for the current brief.">
           <div className="space-y-4">
             <MetricStrip items={model.stability.metrics} columns={4} compact />
             <div className="grid gap-2 text-sm text-ink-2">
-              {[...model.stability.notes, ...model.historyStory, ...model.portfolioImpact.notes.slice(1)].map((note) => (
+              {contextNotes.map((note) => (
                 <p key={note} className="rounded-card border border-white/8 bg-surface-overlay/60 px-3 py-3">{note}</p>
               ))}
             </div>
@@ -191,7 +194,7 @@ export function QualifiedTradeDetailPage() {
         </SectionFrame>
       </section>
 
-      <SectionFrame eyebrow="Actions" title="Complete your review" subtitle="Keep route handling explicit and move to the next decision surface.">
+      <SectionFrame eyebrow="Actions" title="Next review steps" subtitle="Move to the next decision surface without losing the current brief.">
         <ActionRow>
           {model.actions.map((action, index) => (
             <Link

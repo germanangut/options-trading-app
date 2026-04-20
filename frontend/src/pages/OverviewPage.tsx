@@ -18,7 +18,7 @@ export function OverviewPage() {
   const latestScan = useLatestScan();
 
   if (latestScan.isLoading) {
-    return <EmptyState title="Loading latest scan" message="Waiting for the backend to return the current ScanResult." />;
+    return <EmptyState title="Loading latest scan" message="Waiting for the latest run to open the decision cockpit." />;
   }
 
   if (latestScan.isError) {
@@ -33,28 +33,35 @@ export function OverviewPage() {
     return (
       <EmptyState
         title="No scan available yet"
-        message="Run the first scan from the sidebar to populate the overview placeholders."
+        message="Run the first scan from the sidebar to open the overview briefing."
       />
     );
   }
 
   const overview = selectOverviewCockpitModel(latestScan.data);
   const topTradeScore = overview.topTradePreview?.metrics.find((metric) => metric.label === "Score")?.value ?? "-";
+  const primarySnapshotMetrics = overview.snapshot.metrics.filter((metric) => metric.label === "Qualified" || metric.label === "Alerts");
+  const secondarySnapshotMetrics = overview.snapshot.metrics.filter((metric) => metric.label !== "Qualified" && metric.label !== "Alerts");
+  const trustMetrics = overview.trust.metrics.map((metric) => ({
+    ...metric,
+    tone: metric.label === "Missing" || metric.label === "Errors" ? "warning" as const : "neutral" as const,
+  }));
 
   return (
     <PageShell
       eyebrow="Overview"
       title="Decision cockpit"
-      description="A run command center that tells you what happened, what matters most, and where to review next."
+      description="See what happened in this run, what matters first, and where the next review should go."
+      className="gap-4"
     >
-      <section className="grid gap-4 lg:grid-cols-[minmax(0,1.14fr)_minmax(0,0.86fr)]">
-        <SectionFrame eyebrow="Run Priority" title={overview.topTradePreview?.title ?? overview.snapshot.title} subtitle="What deserves your attention first in the latest run." actions={<Chip tone={overview.snapshot.directionTone}>{overview.snapshot.direction}</Chip>}>
+      <section className="grid gap-3 lg:grid-cols-[minmax(0,1.14fr)_minmax(0,0.86fr)]">
+        <SectionFrame eyebrow="What matters first" title={overview.topTradePreview?.title ?? overview.snapshot.title} subtitle="Start here, then confirm run trust and alert pressure before sizing anything." actions={<Chip tone={overview.snapshot.directionTone}>{overview.snapshot.direction}</Chip>}>
           {overview.topTradePreview ? (
-            <div className="space-y-4">
-              <ScoreRibbon score={topTradeScore} detail="Use the lead idea as the first review target only if scan trust and alert pressure still look healthy." size="sm" />
+            <div className="space-y-3.5">
+              <ScoreRibbon score={topTradeScore} detail="Use the lead idea as the first review target only if scan trust and alert pressure still support it." size="sm" />
               <ChartPanel
-                title="Decision story"
-                subtitle="The cockpit keeps the top candidate in narrative form before you drill into the dedicated detail page."
+                title="Why it leads now"
+                subtitle="Read the lead setup in plain language before opening the full execution brief."
                 footer={overview.topTradePreview.notes[0] ?? "No additional top-trade note was returned."}
               >
                 <div className="space-y-3">
@@ -71,7 +78,7 @@ export function OverviewPage() {
               <ActionRow>
                 {overview.topTradePreview.href ? (
                   <Link to={overview.topTradePreview.href} className="rounded-card border border-accent/25 bg-accent px-4 py-2.5 text-sm font-semibold text-surface-0">
-                    Review trade
+                    Open trade brief
                   </Link>
                 ) : null}
                 <Link to="/qualified" className="rounded-card border border-white/10 bg-surface-overlay/70 px-4 py-2.5 text-sm font-semibold text-ink-2">
@@ -84,14 +91,14 @@ export function OverviewPage() {
           )}
         </SectionFrame>
 
-        <div className="grid gap-4">
-          <SectionFrame eyebrow="Scan Trust" title={overview.trust.title} subtitle="Coverage, provider, and execution cues.">
-            <div className="space-y-4">
+        <div className="grid gap-3">
+          <SectionFrame eyebrow="Run trust" title="Can this run be trusted?" subtitle="Coverage and execution cues that decide how hard to lean on the shortlist.">
+            <div className="space-y-3">
               <WarningBand tone={overview.trust.tone} title={overview.trust.title}>
                 {overview.trust.message}
               </WarningBand>
               <MetricStrip
-                items={overview.trust.metrics.map((metric) => ({ ...metric, tone: "neutral" as const }))}
+                items={trustMetrics}
                 columns={3}
                 compact
               />
@@ -105,7 +112,7 @@ export function OverviewPage() {
             </div>
           </SectionFrame>
 
-          <SectionFrame eyebrow="Alert Pressure" title={overview.alertsSnapshot.title} subtitle="Decide whether the ranked board is enough or whether this run needs wider review.">
+          <SectionFrame eyebrow="Alert pressure" title={overview.alertsSnapshot.title} subtitle="Decide whether the ranked board is enough or whether this run needs a wider sweep.">
             <div className="grid gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
               <div className="rounded-card border border-accent/20 bg-accent-soft/28 px-5 py-4 text-center">
                 <p className="eyebrow-label">Alerts</p>
@@ -124,13 +131,16 @@ export function OverviewPage() {
       </section>
 
       <SectionFrame
-        eyebrow="Decision Snapshot"
-        title={overview.snapshot.title}
-        subtitle={overview.snapshot.subtitle}
+        eyebrow="Run summary"
+        title="What the run is telling you"
+        subtitle="Read the lead result, the pressure around it, and the implication before you branch into other pages."
         actions={<Chip tone={overview.snapshot.directionTone}>{overview.snapshot.direction}</Chip>}
       >
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
-          <MetricStrip items={overview.snapshot.metrics} columns={4} />
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.02fr)_minmax(0,0.98fr)]">
+          <div className="space-y-2.5">
+            <MetricStrip items={primarySnapshotMetrics} columns={2} />
+            <MetricStrip items={secondarySnapshotMetrics} columns={2} compact />
+          </div>
           <div className="space-y-4">
             {overview.snapshot.story.map((line) => (
               <div key={line} className="rounded-card border border-white/8 bg-surface-overlay/60 px-4 py-3 text-sm leading-6 text-ink-2">
@@ -141,14 +151,14 @@ export function OverviewPage() {
         </div>
       </SectionFrame>
 
-      <section className="grid gap-4 lg:grid-cols-2">
-        <SectionFrame eyebrow="Portfolio Posture" title={overview.portfolio.posture} subtitle="Current run interpretation from portfolio-facing summaries.">
+      <section className="grid gap-3 lg:grid-cols-2">
+        <SectionFrame eyebrow="Portfolio posture" title={overview.portfolio.posture} subtitle="What the current book is telling you about this run before you size anything.">
           <div className="space-y-3 text-sm text-ink-2">
             <PortfolioImpactBand title="Portfolio read" message={overview.portfolio.summaryLine} tone="neutral" />
             {overview.portfolio.interpretation.length > 0 ? overview.portfolio.interpretation.map((line) => <p key={line}>{line}</p>) : <p>No portfolio interpretation was returned for this run.</p>}
             {overview.portfolio.keySignals.length > 0 ? (
               <div>
-                <p className="mb-2 text-sm font-semibold text-ink-1">Key Signals</p>
+                <p className="mb-2 text-sm font-semibold text-ink-1">What supports the posture</p>
                 <ul className="grid gap-2">
                   {overview.portfolio.keySignals.slice(0, 3).map((signal) => (
                     <li key={signal} className="rounded-xl bg-surface-2 px-3 py-2">{signal}</li>
@@ -165,13 +175,13 @@ export function OverviewPage() {
           </div>
         </SectionFrame>
 
-        <SectionFrame eyebrow="Historical Activity" title="Current context from stored runs" subtitle="Use recurring patterns as context, not prediction.">
+        <SectionFrame eyebrow="History context" title="What recent history reinforces" subtitle="Use recurring context to decide how much confidence this board deserves today.">
           <div className="space-y-4">
             <MetricStrip
               items={[
-                { label: "Runs Analyzed", value: overview.history.runsAnalyzed, tone: "neutral" },
+                { label: "Runs Analyzed", value: overview.history.runsAnalyzed, tone: "accent" },
                 { label: "Signals Logged", value: overview.history.signalsAnalyzed, tone: "neutral" },
-                { label: "Latest Run", value: overview.history.latestRun, tone: "accent" },
+                { label: "Latest Run", value: overview.history.latestRun, tone: "neutral" },
               ]}
               columns={3}
               compact
@@ -200,12 +210,12 @@ export function OverviewPage() {
         </SectionFrame>
       </section>
 
-      <SectionFrame eyebrow="Workflow Guidance" title="What to review next" subtitle="Move from triage into confirmation without losing context.">
+      <SectionFrame eyebrow="Workflow guidance" title="Next review steps" subtitle="Move from triage into confirmation without losing the run story.">
         <div className="grid gap-3 md:grid-cols-3">
           {overview.nextActions.map((action) => (
             <Link key={action.to} to={action.to} className="panel-subtle interactive-border px-4 py-4 text-sm text-ink-2 transition">
               <p className="font-semibold text-ink-1">{action.label}</p>
-              <p className="mt-1">Open the corresponding decision surface.</p>
+              <p className="mt-1">Carry the current run context into the next decision surface.</p>
             </Link>
           ))}
         </div>

@@ -548,7 +548,7 @@ export function selectQualifiedBoardModel(scanResult: ScanResult) {
     caveats,
     narrative: [
       qualifiedTrades.length > 0
-        ? `Start at the top card first: ${qualifiedTrades.length} idea(s) cleared the active contract thresholds.`
+        ? `Start at the top card first: ${qualifiedTrades.length} idea(s) cleared the active filters.`
         : "This run did not surface any qualified opportunities.",
       thresholds.minScore !== null && thresholds.minScore !== undefined
         ? `The shortlist is using ${describeQualityIntent(thresholds.minScore)}.`
@@ -721,7 +721,7 @@ export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail:
       notes: [
         recurringPatterns.length > 0
           ? `${recurringPatterns.length} recurring high-quality pattern(s) are available in the current history context.`
-          : "Historical pattern context is limited in the current payload.",
+          : "History context is still thin in the current view.",
         detail.diagnostics.missing_tickers?.length
           ? `Missing tickers in this scan: ${detail.diagnostics.missing_tickers.join(", ")}`
           : null,
@@ -751,7 +751,7 @@ export function selectTradeDetailExperienceModel(scanResult: ScanResult, detail:
       title: detail.diagnostics.provider_errors?.length ? "Scan caveats present" : "Scan context",
       message: detail.diagnostics.provider_errors?.length
         ? "Provider issues were reported for this scan, so use the trade detail with appropriate caution."
-        : "This screen is backed by the current trade-detail contract and stays presentation-only.",
+        : "This brief reflects the current scan context and the latest trade values returned for this setup.",
     },
     actions: [
       { label: "Back to Qualified Trades", to: "/qualified" },

@@ -2,6 +2,7 @@ import { Card } from "../components/ui/Card";
 import { Chip } from "../components/ui/Chip";
 import { EmptyState } from "../components/ui/EmptyState";
 import { PageShell } from "../components/ui/PageShell";
+import { PortfolioImpactBand } from "../components/ui/PortfolioImpactBand";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
 import { selectAlertsModel } from "../features/scans/selectors/scanSelectors";
@@ -28,20 +29,30 @@ export function AlertsPage() {
   }
 
   const alerts = selectAlertsModel(latestScan.data);
+  const qualifiedCount = Number(latestScan.data.summary?.qualified_count ?? 0);
+  const emptyStateFollowUp = alerts.partialNotice
+    ? "Use diagnostics in the shell and the ranked board before treating this as a clean no-alert run."
+    : qualifiedCount > 0
+      ? "No alert pressure is active, so stay with the ranked board and review the strongest qualified setup next."
+      : "No alert pressure is active, so review Overview and Daily Summary before widening the scan.";
 
   return (
     <PageShell
       eyebrow="Alerts"
-      title="Alert surface"
-      description="Trade alerts remain backend-owned; this page focuses on reading priority, partial coverage, and concise explanations."
+      title="Alert pressure"
+      description="Use alerts as the layer that widens review beyond the ranked board, not as the first place to make the trade decision."
+      className="gap-4"
     >
-      <Card eyebrow="Live Alert Feed" title="Alerts" subtitle={`${alerts.total} alert(s) currently surfaced by the backend.`}>
+      <Card eyebrow="Live alert feed" title="What is widening the review set" subtitle={`${alerts.total} alert(s) are currently asking for a wider look.`}>
         {alerts.rows.length === 0 ? (
-          <EmptyState
-            title={alerts.emptyState.title}
-            message={alerts.emptyState.message}
-            tone={alerts.partialNotice ? "warning" : "neutral"}
-          />
+          <div className="space-y-3">
+            <EmptyState
+              title={alerts.emptyState.title}
+              message={alerts.emptyState.message}
+              tone={alerts.partialNotice ? "warning" : "neutral"}
+            />
+            <PortfolioImpactBand title="What to review instead" message={emptyStateFollowUp} tone={alerts.partialNotice ? "warning" : "neutral"} />
+          </div>
         ) : (
           <div className="grid gap-3">
             {alerts.rows.map(({ id, trade, score, tag }) => (

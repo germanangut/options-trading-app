@@ -15,7 +15,7 @@ export function QualifiedTradesPage() {
   const latestScan = useLatestScan();
 
   if (latestScan.isLoading) {
-    return <EmptyState title="Loading qualified trades" message="Waiting for the latest ranked board from the backend." />;
+    return <EmptyState title="Loading qualified trades" message="Waiting for the latest ranked board to open." />;
   }
 
   if (latestScan.isError) {
@@ -30,19 +30,22 @@ export function QualifiedTradesPage() {
     return (
       <EmptyState
         title="No qualified trades yet"
-        message="Run a scan first. This page will later evolve into the primary trade review surface."
+        message="Run a scan first to populate the ranked trade board."
       />
     );
   }
 
   const qualifiedTrades = selectQualifiedBoardModel(latestScan.data);
   const leadItem = qualifiedTrades.items[0] ?? null;
+  const primarySummary = qualifiedTrades.summary.filter((item) => item.label === "Qualified" || item.label === "Portfolio Posture");
+  const secondarySummary = qualifiedTrades.summary.filter((item) => item.label !== "Qualified" && item.label !== "Portfolio Posture");
 
   return (
     <PageShell
       eyebrow="Qualified Trades"
       title="Ranked decision board"
-      description="Read this page like a shortlist briefing: identity first, risk shape second, portfolio fit third, then open the execution brief."
+      description="Read this page like a shortlist briefing: identity first, evidence second, then open the execution brief only for names that still fit."
+      className="gap-4"
       actions={
         <ActionRow>
           <Link to="/alerts" className="rounded-card border border-white/10 bg-surface-overlay/70 px-4 py-2.5 text-sm font-semibold text-ink-2">
@@ -51,8 +54,8 @@ export function QualifiedTradesPage() {
         </ActionRow>
       }
     >
-      <SectionFrame eyebrow="Board Readout" title="Current shortlist" subtitle="The board preserves backend ranking and turns each row into a decision story instead of a flat summary.">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
+      <SectionFrame eyebrow="Shortlist" title="What the board is prioritizing" subtitle="Start with identity and pressure first, then open the execution brief for the names that still earn attention.">
+        <div className="grid gap-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">
           <div className="grid gap-3">
             {leadItem ? (
               <div className="rounded-card border border-accent/20 bg-accent-soft/24 p-4">
@@ -79,9 +82,10 @@ export function QualifiedTradesPage() {
             </div>
           </div>
           <div className="grid gap-3">
-            <MetricStrip items={qualifiedTrades.summary} columns={4} />
+            <MetricStrip items={primarySummary} columns={2} />
+            <MetricStrip items={secondarySummary} columns={2} compact />
             <div className="rounded-card border border-accent/20 bg-accent-soft/24 px-4 py-3 text-sm leading-6 text-ink-2">
-              Start with the top-ranked card, use the quality ribbon and payoff cue to filter quickly, then open the execution brief only for names that still fit.
+              Start with the lead card, use the quality ribbon and payoff cue to filter quickly, then open the execution brief only for names that still fit.
             </div>
           </div>
         </div>
@@ -128,7 +132,7 @@ export function QualifiedTradesPage() {
               actionLabel={item.actionLabel}
               footer={
                 <ActionRow>
-                  <span className="text-sm text-ink-4">Open the execution-prep detail view only after the card still looks right on risk, quality, and concentration.</span>
+                  <span className="text-sm text-ink-4">Open the execution brief only after the card still looks right on risk, quality, and concentration.</span>
                 </ActionRow>
               }
             />
