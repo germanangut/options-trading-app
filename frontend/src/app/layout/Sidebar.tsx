@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 
-import { Banner } from "../../components/ui/Banner";
 import { useLatestScan } from "../../features/scans/hooks/useLatestScan";
 import { useScanControls } from "../../features/scans/hooks/useScanControls";
 import { useRunScan } from "../../features/scans/hooks/useRunScan";
@@ -92,6 +91,7 @@ export function Sidebar() {
     : controls.request.min_consistency <= 1
       ? "fresh"
       : "balanced";
+  const runErrorMessage = runScan.isError ? describeApiError(runScan.error, "run", "the scan").message : null;
 
   function applyDirectionSelection(direction: "bullish" | "bearish" | "either") {
     if (direction === "bullish") {
@@ -202,10 +202,20 @@ export function Sidebar() {
                   </button>
                 </div>
 
-                {runScan.isError ? (
-                  <Banner tone="danger" title="Scan failed">
-                    {describeApiError(runScan.error, "run", "the scan").message}
-                  </Banner>
+                {runErrorMessage ? (
+                  <div
+                    className="rounded-card border border-danger/18 bg-danger-soft/18 px-3 py-2.5"
+                    data-testid="sidebar-run-error"
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span className="mt-1 h-2 w-2 rounded-full bg-danger" aria-hidden="true" />
+                      <div className="min-w-0 space-y-1">
+                        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-danger">Scan status</p>
+                        <p className="text-sm font-semibold tracking-tight text-ink-1">Latest run did not complete</p>
+                        <p className="text-xs leading-5 text-ink-3">{runErrorMessage}</p>
+                      </div>
+                    </div>
+                  </div>
                 ) : null}
               </div>
             </div>

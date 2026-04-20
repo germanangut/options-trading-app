@@ -192,4 +192,28 @@ describe("Sidebar", () => {
       }),
     );
   });
+
+  it("shows a compact scan failure status without turning the action zone into a blocking alert", () => {
+    vi.mocked(useLatestScan).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildScan(),
+    } as ReturnType<typeof useLatestScan>);
+    vi.mocked(useRunScan).mockReturnValue({
+      isPending: false,
+      isError: true,
+      error: new Error("Provider timeout"),
+      mutate: vi.fn(),
+    } as unknown as ReturnType<typeof useRunScan>);
+
+    render(
+      <MemoryRouter>
+        <Sidebar />
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByTestId("run-scan-button")).toBeInTheDocument();
+    expect(screen.getByTestId("sidebar-run-error")).toBeInTheDocument();
+    expect(screen.getByText("Latest run did not complete")).toBeInTheDocument();
+  });
 });
