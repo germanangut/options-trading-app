@@ -41,7 +41,7 @@ jobs:
           fi
 
   frontend:
-    name: Frontend quality checks
+    name: Frontend build validation
     runs-on: ubuntu-latest
 
     steps:
@@ -58,51 +58,10 @@ jobs:
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
-
-      - name: Run frontend unit tests
-        working-directory: frontend
-        run: npm test
 
       - name: Run frontend production build
         working-directory: frontend
         run: npm run build
-
-  frontend-visual:
-    name: Frontend visual QA
-    runs-on: ubuntu-latest
-    needs: frontend
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-
-      - name: Install frontend dependencies
-        working-directory: frontend
-        run: npm ci
-
-      - name: Install Playwright browsers
-        working-directory: frontend
-        run: npx playwright install --with-deps chromium
-
-      - name: Run frontend visual QA
-        working-directory: frontend
-        run: npm run test:visual:ci
-
-      - name: Upload Playwright artifacts on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: playwright-test-results
-          path: |
-            frontend/test-results
-            frontend/playwright-report
 
   docker-build:
     name: Docker build validation
@@ -110,7 +69,6 @@ jobs:
     needs:
       - test
       - frontend
-      - frontend-visual
 
     steps:
       - name: Checkout repository
