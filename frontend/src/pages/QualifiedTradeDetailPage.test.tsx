@@ -168,6 +168,129 @@ function buildDetail(): TradeDetailResponse {
   };
 }
 
+function buildWorkbenchScenarioResult() {
+  return {
+    scan_id: "scan_trade",
+    trade_id: "trade_1",
+    strategy_key: "bull_put_spread",
+    underlying_price_reference: 191.2,
+    ticker: "AAPL",
+    strike_shift: "closer_atm",
+    width_adjustment: "wider",
+    baseline: {
+      strategy_key: "bull_put_spread",
+      ticker: "AAPL",
+      short_strike: 180,
+      long_strike: 175,
+      expiration_date: "2026-05-15",
+      net_credit: 1.45,
+      spread_width: 5,
+      max_profit: 145,
+      max_loss: 355,
+      breakeven: 178.55,
+      label: "Current scanned setup",
+      is_credit_estimated: false,
+      payoff: {
+        strategy_key: "bull_put_spread",
+        ticker: "AAPL",
+        quantity: 1,
+        underlying_price_reference: 191.2,
+        short_strike: 180,
+        long_strike: 175,
+        net_credit: 1.45,
+        spread_width: 5,
+        max_profit: 145,
+        max_loss: 355,
+        breakeven_low: 178.55,
+        breakeven_high: null,
+        profit_zone: "Underlying >= 180.00",
+        loss_zone: "Underlying <= 175.00",
+        expiration_summary: "Baseline payoff profile.",
+        price_grid: [160, 170, 180, 190, 200],
+        payoff_points: [
+          { underlying_price: 160, expiration_payoff: -355 },
+          { underlying_price: 170, expiration_payoff: -355 },
+          { underlying_price: 180, expiration_payoff: 145 },
+          { underlying_price: 190, expiration_payoff: 145 },
+          { underlying_price: 200, expiration_payoff: 145 },
+        ],
+      },
+    },
+    scenario: {
+      strategy_key: "bull_put_spread",
+      ticker: "AAPL",
+      short_strike: 181,
+      long_strike: 175,
+      expiration_date: "2026-05-15",
+      net_credit: 1.62,
+      spread_width: 6,
+      max_profit: 162,
+      max_loss: 438,
+      breakeven: 179.38,
+      label: "Short strike moved closer to ATM (181.00); Spread widened",
+      is_credit_estimated: true,
+      payoff: {
+        strategy_key: "bull_put_spread",
+        ticker: "AAPL",
+        quantity: 1,
+        underlying_price_reference: 191.2,
+        short_strike: 181,
+        long_strike: 175,
+        net_credit: 1.62,
+        spread_width: 6,
+        max_profit: 162,
+        max_loss: 438,
+        breakeven_low: 179.38,
+        breakeven_high: null,
+        profit_zone: "Underlying >= 181.00",
+        loss_zone: "Underlying <= 175.00",
+        expiration_summary: "Scenario payoff profile.",
+        price_grid: [160, 170, 180, 190, 200],
+        payoff_points: [
+          { underlying_price: 160, expiration_payoff: -438 },
+          { underlying_price: 170, expiration_payoff: -438 },
+          { underlying_price: 180, expiration_payoff: 62 },
+          { underlying_price: 190, expiration_payoff: 162 },
+          { underlying_price: 200, expiration_payoff: 162 },
+        ],
+      },
+    },
+    comparison: {
+      delta_net_credit: 0.17,
+      delta_max_profit: 17,
+      delta_max_loss: 83,
+      delta_breakeven: 0.83,
+      delta_spread_width: 1,
+      risk_reward_ratio: 0.3699,
+      delta_risk_reward_ratio: -0.0386,
+      summary: "Higher credit (+$0.17); wider spread; tighter room before loss",
+    },
+    unavailable_reason: null,
+    strike_shift_options: [
+      { value: "further_otm", label: "Further out-of-the-money" },
+      { value: "baseline", label: "Baseline" },
+      { value: "closer_atm", label: "Closer for more credit" },
+    ],
+    width_options: [
+      { value: "narrower", label: "Narrower spread" },
+      { value: "baseline", label: "Baseline" },
+      { value: "wider", label: "Wider spread" },
+    ],
+  };
+}
+
+function buildWorkbenchUnavailableResult() {
+  const base = buildWorkbenchScenarioResult();
+  return {
+    ...base,
+    strike_shift: "closer_atm",
+    width_adjustment: "baseline",
+    scenario: null,
+    comparison: null,
+    unavailable_reason: "No clean alternative found for this adjustment",
+  };
+}
+
 describe("QualifiedTradeDetailPage", () => {
   it("renders the execution briefing composition with strike ladder and checklist", () => {
     vi.mocked(useScanById).mockReturnValue({
@@ -404,6 +527,11 @@ describe("QualifiedTradeDetailPage", () => {
       mutate: vi.fn(),
       isPending: false,
     } as unknown as ReturnType<typeof useUpsertTradeLifecycle>);
+    vi.mocked(useWorkbenchScenario).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildWorkbenchScenarioResult(),
+    } as unknown as ReturnType<typeof useWorkbenchScenario>);
 
     render(
       <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
@@ -428,6 +556,9 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("Execution preparation")).toBeInTheDocument();
     expect(screen.getByText("Variant comparison")).toBeInTheDocument();
     expect(screen.getByText("Payoff shape and trade-off lab")).toBeInTheDocument();
+    expect(screen.getByText("Scenario explorer")).toBeInTheDocument();
+    expect(screen.getByText("Short strike")).toBeInTheDocument();
+    expect(screen.getByText("Spread width")).toBeInTheDocument();
     expect(screen.getAllByText("Current scanned setup").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Lower credit, more room for the trade to work").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Higher premium, tighter room for error").length).toBeGreaterThan(0);
@@ -452,6 +583,11 @@ describe("QualifiedTradeDetailPage", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Max Credit" }));
     expect(screen.getByText("Closer short strike, richer premium, tighter room for error.")).toBeInTheDocument();
+
+    // Workbench starts in baseline mode; selecting a control reveals scenario comparison.
+    fireEvent.click(screen.getByRole("button", { name: "Closer for more credit" }));
+    expect(screen.getByText("What-if scenario")).toBeInTheDocument();
+    expect(screen.getByText("Change vs. baseline")).toBeInTheDocument();
   });
 
   it("shows Add note prompt when no note is saved", () => {
@@ -483,6 +619,11 @@ describe("QualifiedTradeDetailPage", () => {
     vi.mocked(useUpsertTradeLifecycle).mockReturnValue({
       mutate: vi.fn(), isPending: false,
     } as unknown as ReturnType<typeof useUpsertTradeLifecycle>);
+    vi.mocked(useWorkbenchScenario).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: null,
+    } as unknown as ReturnType<typeof useWorkbenchScenario>);
 
     render(
       <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
@@ -588,6 +729,11 @@ describe("QualifiedTradeDetailPage", () => {
     vi.mocked(useUpsertTradeLifecycle).mockReturnValue({
       mutate: vi.fn(), isPending: false,
     } as unknown as ReturnType<typeof useUpsertTradeLifecycle>);
+    vi.mocked(useWorkbenchScenario).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildWorkbenchUnavailableResult(),
+    } as unknown as ReturnType<typeof useWorkbenchScenario>);
 
     render(
       <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
@@ -600,5 +746,10 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("No clean variant was found for this setup, so only baseline is available for visual analysis.")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Conservative" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Max Credit" })).toBeNull();
+
+    // Trigger non-baseline workbench view to validate unavailable-state messaging.
+    fireEvent.click(screen.getByRole("button", { name: "Closer for more credit" }));
+    expect(screen.getByText("No clean alternative found")).toBeInTheDocument();
+    expect(screen.getByText("No clean alternative found for this adjustment")).toBeInTheDocument();
   });
 });
