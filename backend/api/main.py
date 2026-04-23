@@ -16,6 +16,7 @@ from backend.api.routes.payoff import router as payoff_router
 from backend.api.routes.scans import router as scans_router
 from backend.api.routes.tickets import router as tickets_router
 from backend.api.routes.variants import router as variants_router
+from backend.api.routes.workbench import router as workbench_router
 from backend.observability.context import bind_context, clear_context
 from backend.observability.error_tracking import initialize_error_tracking
 from backend.observability.logging import configure_logging, get_logger, log_event
@@ -102,6 +103,7 @@ app.include_router(ops_router)
 app.include_router(tickets_router)
 app.include_router(payoff_router)
 app.include_router(variants_router)
+app.include_router(workbench_router)
 
 log_event(logger, "app_configured", **get_safe_settings_summary())
 

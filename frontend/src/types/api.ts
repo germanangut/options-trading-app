@@ -497,3 +497,59 @@ export type PaperDashboardResponse = {
     generated_at: string;
   };
 };
+
+// ---------------------------------------------------------------------------
+// What-If Workbench (PU-15B.4)
+// ---------------------------------------------------------------------------
+
+export type WorkbenchStrikeShift = "further_otm" | "baseline" | "closer_atm";
+export type WorkbenchWidthAdjustment = "narrower" | "baseline" | "wider";
+
+export type WorkbenchControlOption = {
+  value: string;
+  label: string;
+};
+
+export type WorkbenchScenario = {
+  strategy_key: string;
+  ticker: string | null;
+  short_strike: number;
+  long_strike: number;
+  expiration_date: string | null;
+  net_credit: number;
+  spread_width: number;
+  max_profit: number;
+  max_loss: number;
+  breakeven: number;
+  label: string;
+  is_credit_estimated: boolean;
+  payoff: PayoffAnalysis | null;
+};
+
+export type WorkbenchComparison = {
+  delta_net_credit: number;
+  delta_max_profit: number;
+  delta_max_loss: number;
+  delta_breakeven: number;
+  delta_spread_width: number;
+  risk_reward_ratio: number | null;
+  delta_risk_reward_ratio: number | null;
+  summary: string;
+};
+
+export type WorkbenchResult = {
+  scan_id: string;
+  trade_id: string;
+  strategy_key: string;
+  underlying_price_reference: number;
+  ticker: string | null;
+  strike_shift: WorkbenchStrikeShift;
+  width_adjustment: WorkbenchWidthAdjustment;
+  baseline: WorkbenchScenario;
+  scenario: WorkbenchScenario | null;
+  comparison: WorkbenchComparison | null;
+  unavailable_reason: string | null;
+  strike_shift_options: WorkbenchControlOption[];
+  width_options: WorkbenchControlOption[];
+};
+

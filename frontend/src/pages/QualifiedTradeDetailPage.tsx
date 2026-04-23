@@ -17,15 +17,17 @@ import { SectionFrame } from "../components/ui/SectionFrame";
 import { Chip } from "../components/ui/Chip";
 import { WarningBand } from "../components/ui/WarningBand";
 import { VisualStrategyLab } from "../components/ui/VisualStrategyLab";
+import { WhatIfWorkbench } from "../components/ui/WhatIfWorkbench";
 import { useScanById } from "../features/scans/hooks/useScanById";
 import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
 import { useTradePayoff } from "../features/scans/hooks/useTradePayoff";
 import { useTradeVariants } from "../features/scans/hooks/useTradeVariants";
+import { useWorkbenchScenario } from "../features/scans/hooks/useWorkbenchScenario";
 import { useTradeLifecycle, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
 import { selectTradeDetailExperienceModel } from "../features/scans/selectors/decisionExperienceSelectors";
 import { describeApiError } from "../lib/apiErrors";
 import { formatCurrency } from "../lib/formatters";
-import type { CreateTicketPayload } from "../types/api";
+import type { CreateTicketPayload, WorkbenchStrikeShift, WorkbenchWidthAdjustment } from "../types/api";
 import { VariantComparisonPanel } from "../components/ui/VariantComparisonPanel";
 
 export function QualifiedTradeDetailPage() {
@@ -40,6 +42,9 @@ export function QualifiedTradeDetailPage() {
   const [noteEditing, setNoteEditing] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteJustSaved, setNoteJustSaved] = useState(false);
+  const [workbenchStrikeShift, setWorkbenchStrikeShift] = useState<WorkbenchStrikeShift>("baseline");
+  const [workbenchWidthAdjustment, setWorkbenchWidthAdjustment] = useState<WorkbenchWidthAdjustment>("baseline");
+  const workbenchQuery = useWorkbenchScenario(scanId, tradeId, workbenchStrikeShift, workbenchWidthAdjustment);
 
   useEffect(() => {
     setNoteDraft(savedNote ?? "");
@@ -265,6 +270,23 @@ export function QualifiedTradeDetailPage() {
         subtitle="Compare baseline vs one variant at a time to keep payoff visuals clear and decision-focused."
       >
         <VisualStrategyLab variantSet={variantsQuery.data} isLoading={variantsQuery.isLoading} />
+      </SectionFrame>
+
+      <SectionFrame
+        eyebrow="What-if workbench"
+        title="Scenario explorer"
+        subtitle="Adjust the short strike or spread width to see how credit, max loss, and payoff change. Analytical only — not execution-ready."
+      >
+        <WhatIfWorkbench
+          scanId={scanId}
+          tradeId={tradeId}
+          result={workbenchQuery.data}
+          isLoading={workbenchQuery.isLoading}
+          strikeShift={workbenchStrikeShift}
+          widthAdjustment={workbenchWidthAdjustment}
+          onStrikeShiftChange={setWorkbenchStrikeShift}
+          onWidthAdjustmentChange={setWorkbenchWidthAdjustment}
+        />
       </SectionFrame>
 
       <SectionFrame eyebrow="Lifecycle" title="Trade workflow state" subtitle="User-managed state is persistent and separate from scan qualification and ranking.">

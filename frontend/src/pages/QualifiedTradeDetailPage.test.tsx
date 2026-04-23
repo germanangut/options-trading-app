@@ -21,6 +21,10 @@ vi.mock("../features/scans/hooks/useTradeVariants", () => ({
   useTradeVariants: vi.fn(),
 }));
 
+vi.mock("../features/scans/hooks/useWorkbenchScenario", () => ({
+  useWorkbenchScenario: vi.fn(),
+}));
+
 vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
   useTradeLifecycle: vi.fn(),
   useUpsertTradeLifecycle: vi.fn(),
@@ -41,6 +45,7 @@ const { useTradeDetail } = await import("../features/scans/hooks/useTradeDetail"
 const { useTradePayoff } = await import("../features/scans/hooks/useTradePayoff");
 const { useTradeLifecycle, useUpsertTradeLifecycle } = await import("../features/scans/hooks/useTradeLifecycle");
 const { useTradeVariants } = await import("../features/scans/hooks/useTradeVariants");
+const { useWorkbenchScenario } = await import("../features/scans/hooks/useWorkbenchScenario");
 
 function buildScan(): ScanResult {
   return {

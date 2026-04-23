@@ -12,6 +12,9 @@ import type {
   TradeLifecycleListResponse,
   TradeLifecycleRecord,
   TradeLifecycleUpsertPayload,
+  WorkbenchResult,
+  WorkbenchStrikeShift,
+  WorkbenchWidthAdjustment,
 } from "../../../types/api";
 import type { VariantSet } from "../../../types/api";
 
@@ -44,6 +47,21 @@ export function getTradePayoff(scanId: string, tradeId: string): Promise<PayoffE
 export function getTradeVariants(scanId: string, tradeId: string): Promise<VariantSet> {
   return apiClient.get<VariantSet>(
     `/api/v1/variants/scans/${encodeURIComponent(scanId)}/trades/${encodeURIComponent(tradeId)}`,
+  );
+}
+
+export function getWorkbenchScenario(
+  scanId: string,
+  tradeId: string,
+  strikeShift: WorkbenchStrikeShift,
+  widthAdjustment: WorkbenchWidthAdjustment,
+): Promise<WorkbenchResult> {
+  const params = new URLSearchParams({
+    strike_shift: strikeShift,
+    width_adjustment: widthAdjustment,
+  });
+  return apiClient.get<WorkbenchResult>(
+    `/api/v1/workbench/scans/${encodeURIComponent(scanId)}/trades/${encodeURIComponent(tradeId)}?${params.toString()}`,
   );
 }
 
