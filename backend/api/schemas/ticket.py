@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -45,6 +46,13 @@ class ExecutionTicketResponse(BaseModel):
     # Audit
     created_at: str | None = None
     updated_at: str | None = None
+    broker_order_id: str | None = None
+    broker_status_raw: str | None = None
+    broker_submitted_at: str | None = None
+    broker_updated_at: str | None = None
+    last_submission_payload: dict[str, Any] | None = None
+    last_submission_response: dict[str, Any] | None = None
+    submission_error_message: str | None = None
 
 
 class ExecutionTicketListResponse(BaseModel):

@@ -6,6 +6,8 @@ import {
   listExecutionTickets,
   listExecutionTicketsByTrade,
   patchExecutionTicket,
+  refreshExecutionTicketFromPaper,
+  submitExecutionTicketToPaper,
 } from "../api/scansApi";
 import { QUERY_KEYS } from "../../../lib/constants";
 import type {
@@ -78,6 +80,42 @@ export function usePatchExecutionTicket() {
   return useMutation({
     mutationFn: async ({ ticketId, payload }: { ticketId: string; payload: PatchTicketPayload }) => {
       return patchExecutionTicket(ticketId, payload);
+    },
+    onSuccess: async (ticket) => {
+      queryClient.setQueryData(["execution-ticket", ticket.ticket_id], ticket);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ticketList }),
+        queryClient.invalidateQueries({ queryKey: [...QUERY_KEYS.ticketsByTrade, ticket.trade_id] }),
+      ]);
+    },
+  });
+}
+
+
+export function useSubmitExecutionTicketToPaper() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (ticketId: string) => {
+      return submitExecutionTicketToPaper(ticketId);
+    },
+    onSuccess: async (ticket) => {
+      queryClient.setQueryData(["execution-ticket", ticket.ticket_id], ticket);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: QUERY_KEYS.ticketList }),
+        queryClient.invalidateQueries({ queryKey: [...QUERY_KEYS.ticketsByTrade, ticket.trade_id] }),
+      ]);
+    },
+  });
+}
+
+
+export function useRefreshExecutionTicketFromPaper() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (ticketId: string) => {
+      return refreshExecutionTicketFromPaper(ticketId);
     },
     onSuccess: async (ticket) => {
       queryClient.setQueryData(["execution-ticket", ticket.ticket_id], ticket);

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 from uuid import uuid4
 
 from backend.contracts.ticket_models import (
@@ -23,7 +24,7 @@ def _new_ticket_id() -> str:
     return f"ticket_{uuid4().hex}"
 
 
-def _serialize_ticket(ticket: ExecutionTicket) -> dict[str, object]:
+def _serialize_ticket(ticket: ExecutionTicket) -> dict[str, Any]:
     return {
         "ticket_id": ticket.ticket_id,
         "trade_id": ticket.trade_id,
@@ -45,7 +46,18 @@ def _serialize_ticket(ticket: ExecutionTicket) -> dict[str, object]:
         "note": ticket.note,
         "created_at": ticket.created_at,
         "updated_at": ticket.updated_at,
+        "broker_order_id": ticket.broker_order_id,
+        "broker_status_raw": ticket.broker_status_raw,
+        "broker_submitted_at": ticket.broker_submitted_at,
+        "broker_updated_at": ticket.broker_updated_at,
+        "last_submission_payload": ticket.last_submission_payload,
+        "last_submission_response": ticket.last_submission_response,
+        "submission_error_message": ticket.submission_error_message,
     }
+
+
+def serialize_execution_ticket(ticket: ExecutionTicket) -> dict[str, Any]:
+    return _serialize_ticket(ticket)
 
 
 def create_execution_ticket(
@@ -102,6 +114,13 @@ def create_execution_ticket(
         note=note,
         created_at=now,
         updated_at=now,
+        broker_order_id=None,
+        broker_status_raw=None,
+        broker_submitted_at=None,
+        broker_updated_at=None,
+        last_submission_payload=None,
+        last_submission_response=None,
+        submission_error_message=None,
     )
 
     stored = get_ticket_repository().create_ticket(ticket)

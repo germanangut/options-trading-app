@@ -254,12 +254,56 @@ PU-15A.2 refines lifecycle interactions so the user experience feels like a real
 	- **Edit mode**: textarea with Save note (primary, disabled until changed) and Cancel; Save triggers a 2.5-second "Saved" confirmation flash then returns to read mode
 - All lifecycle errors surface via the component's `errorMessage` prop
 
-**Deferred to PU-15A.3**
+### Execution tickets and paper submission (PU-15A.3 / PU-15A.4)
 
-- Paper order submission and paper execution state transitions
-- Lifecycle history view and per-trade state change log
-- Lifecycle analytics (how long trades stay at each state, transition rates)
-- Broker-facing orchestration (PU-15A.4)
+Execution tickets are separate from both scan candidates and lifecycle records. They capture a user-owned execution snapshot and now support a ticket-centered paper submission flow.
+
+Paper submission endpoints:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/api/v1/tickets/{ticket_id}/submit-paper` | Submit eligible ticket to Alpaca paper account and persist broker metadata |
+| `POST` | `/api/v1/tickets/{ticket_id}/refresh-paper` | Refresh broker status for an already-submitted ticket |
+
+PU-15A.4 is constrained to paper trading only:
+
+- `ALPACA_TRADING_BASE_URL` must resolve to `https://paper-api.alpaca.markets...`
+- live trading endpoints are blocked by a backend guardrail
+- credentials are required; missing credentials reject the request with clear messaging
+
+Ticket-to-broker mapping in this phase:
+
+- supported strategies: `bull_put_spread`, `bear_call_spread`
+- supported intents: `open_credit`, `open_debit`
+- order payload: multi-leg (`order_class: mleg`) option order
+- strike/expiry snapshot fields from the ticket are converted to OCC option symbols and sent as broker legs
+- exact outbound payload and normalized broker response are stored on the ticket for auditability
+
+Execution status mapping from broker status:
+
+| Broker status raw | App execution status |
+| --- | --- |
+| `new`, `accepted`, `pending_new`, `partially_filled`, `pending_replace`, `replaced`, `calculated`, `stopped` | `accepted` |
+| `filled` | `filled` |
+| `rejected`, `suspended` | `rejected` |
+| `canceled`, `expired`, `done_for_day`, `pending_cancel` | `canceled` |
+| unknown/other | `submitted` |
+
+Audit fields stored per ticket:
+
+- `broker_order_id`
+- `broker_status_raw`
+- `broker_submitted_at`
+- `broker_updated_at`
+- `last_submission_payload`
+- `last_submission_response`
+- `submission_error_message`
+
+Known limitations deferred to PU-15A.5:
+
+- broader strategy and order-construction coverage beyond the two spread strategies above
+- richer order lifecycle handling (replace/cancel actions and historical timeline UI)
+- execution analytics, P&L attribution, and full operational dashboards
 
 ### Scope boundaries in this phase
 

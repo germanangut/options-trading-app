@@ -72,3 +72,17 @@ export function patchExecutionTicket(
 ): Promise<ExecutionTicket> {
   return apiClient.patch<ExecutionTicket>(`/api/v1/tickets/${encodeURIComponent(ticketId)}`, payload);
 }
+
+export function submitExecutionTicketToPaper(ticketId: string): Promise<ExecutionTicket> {
+  return apiClient.post<ExecutionTicket>(
+    `/api/v1/tickets/${encodeURIComponent(ticketId)}/submit-paper`,
+    {},
+  );
+}
+
+export function refreshExecutionTicketFromPaper(ticketId: string): Promise<ExecutionTicket> {
+  return apiClient.post<ExecutionTicket>(
+    `/api/v1/tickets/${encodeURIComponent(ticketId)}/refresh-paper`,
+    {},
+  );
+}

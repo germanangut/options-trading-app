@@ -335,6 +335,13 @@ export type ExecutionTicket = {
   note: string | null;
   created_at: string | null;
   updated_at: string | null;
+  broker_order_id: string | null;
+  broker_status_raw: string | null;
+  broker_submitted_at: string | null;
+  broker_updated_at: string | null;
+  last_submission_payload: Record<string, unknown> | null;
+  last_submission_response: Record<string, unknown> | null;
+  submission_error_message: string | null;
 };
 
 export type ExecutionTicketListResponse = {

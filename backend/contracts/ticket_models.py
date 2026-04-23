@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 
 EXECUTION_TICKET_STATUSES: tuple[str, ...] = (
@@ -83,3 +84,12 @@ class ExecutionTicket:
     # ── Audit ─────────────────────────────────────────────────────────────
     created_at: str
     updated_at: str
+
+    # ── Broker-facing audit metadata (PU-15A.4) ─────────────────────────
+    broker_order_id: str | None
+    broker_status_raw: str | None
+    broker_submitted_at: str | None
+    broker_updated_at: str | None
+    last_submission_payload: dict[str, Any] | None
+    last_submission_response: dict[str, Any] | None
+    submission_error_message: str | None

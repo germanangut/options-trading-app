@@ -6,6 +6,8 @@ import {
   useCreateExecutionTicket,
   useExecutionTicketsByTrade,
   usePatchExecutionTicket,
+  useRefreshExecutionTicketFromPaper,
+  useSubmitExecutionTicketToPaper,
 } from "../../features/scans/hooks/useExecutionTickets";
 
 type ExecutionTicketPanelProps = {
@@ -24,6 +26,8 @@ export function ExecutionTicketPanel({
   const ticketsQuery = useExecutionTicketsByTrade(tradeId);
   const createTicket = useCreateExecutionTicket();
   const patchTicket = usePatchExecutionTicket();
+  const submitToPaper = useSubmitExecutionTicketToPaper();
+  const refreshFromPaper = useRefreshExecutionTicketFromPaper();
 
   const ticket = useMemo(() => {
     if (!ticketsQuery.data || ticketsQuery.data.length === 0) {
@@ -35,6 +39,7 @@ export function ExecutionTicketPanel({
   const [quantityDraft, setQuantityDraft] = useState(1);
   const [noteDraft, setNoteDraft] = useState("");
   const [noteEditing, setNoteEditing] = useState(false);
+  const [submissionNotice, setSubmissionNotice] = useState<string | null>(null);
 
   useEffect(() => {
     if (!ticket) {
@@ -51,8 +56,14 @@ export function ExecutionTicketPanel({
   const quantityChanged = ticket ? quantityDraft !== ticket.quantity : false;
   const noteChanged = ticket ? noteDraft.trim() !== (ticket.note ?? "").trim() : false;
 
-  const isPending = createTicket.isPending || patchTicket.isPending;
-  const panelError = createTicket.error?.message ?? patchTicket.error?.message ?? null;
+  const isPending = createTicket.isPending || patchTicket.isPending || submitToPaper.isPending || refreshFromPaper.isPending;
+  const panelError =
+    createTicket.error?.message
+    ?? patchTicket.error?.message
+    ?? submitToPaper.error?.message
+    ?? refreshFromPaper.error?.message
+    ?? null;
+  const canSubmitToPaper = Boolean(ticket && (ticket.execution_status === "draft" || ticket.execution_status === "ready"));
 
   function submitCreate() {
     if (!tradeId || isPending) {
@@ -96,6 +107,34 @@ export function ExecutionTicketPanel({
     patchTicket.mutate({
       ticketId: ticket.ticket_id,
       payload: { execution_status: "ready" },
+    });
+  }
+
+  function submitTicketToPaper() {
+    if (!ticket || isPending || !canSubmitToPaper) {
+      return;
+    }
+    setSubmissionNotice(null);
+    submitToPaper.mutate(ticket.ticket_id, {
+      onSuccess: (updated) => {
+        if (updated.execution_status === "rejected") {
+          setSubmissionNotice("Paper submission was rejected. Review broker feedback below.");
+        } else {
+          setSubmissionNotice("Ticket submitted to paper broker successfully.");
+        }
+      },
+    });
+  }
+
+  function refreshBrokerStatus() {
+    if (!ticket || isPending || !ticket.broker_order_id) {
+      return;
+    }
+    setSubmissionNotice(null);
+    refreshFromPaper.mutate(ticket.ticket_id, {
+      onSuccess: () => {
+        setSubmissionNotice("Broker status refreshed.");
+      },
     });
   }
 
@@ -151,16 +190,28 @@ export function ExecutionTicketPanel({
     );
   }
 
-  const statusTone = ticket.execution_status === "ready" ? "success" : "neutral";
+  const statusTone = ticket.execution_status === "ready"
+    ? "success"
+    : ticket.execution_status === "rejected"
+      ? "danger"
+      : ticket.execution_status === "filled"
+        ? "success"
+        : ticket.execution_status === "accepted" || ticket.execution_status === "submitted"
+          ? "accent"
+          : "neutral";
 
   return (
     <div className="rounded-card border border-white/8 bg-surface-overlay/40 p-4 space-y-4">
       <div className="flex flex-wrap items-center gap-2">
         <Chip tone={statusTone}>{ticket.execution_status}</Chip>
         <span className="text-xs text-ink-4">
-          {ticket.execution_status === "ready"
-            ? "Ready for paper execution"
-            : "Draft ticket captured for operator review"}
+          {ticket.execution_status === "ready" && "Ready for paper execution"}
+          {ticket.execution_status === "draft" && "Draft ticket captured for operator review"}
+          {ticket.execution_status === "submitted" && "Submitted to paper broker; waiting for acknowledgement"}
+          {ticket.execution_status === "accepted" && "Accepted by paper broker"}
+          {ticket.execution_status === "rejected" && "Rejected by paper broker"}
+          {ticket.execution_status === "canceled" && "Canceled at broker"}
+          {ticket.execution_status === "filled" && "Filled at broker"}
         </span>
       </div>
 
@@ -267,6 +318,49 @@ export function ExecutionTicketPanel({
           Mark Ready
         </button>
       ) : null}
+
+      <div className="space-y-2 rounded-card border border-white/8 bg-surface-2/40 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-4">Paper broker</p>
+          {ticket.broker_status_raw ? (
+            <Chip tone={ticket.execution_status === "rejected" ? "danger" : "accent"}>{ticket.broker_status_raw}</Chip>
+          ) : null}
+        </div>
+
+        <div className="grid gap-1 text-xs text-ink-3">
+          <p>Broker order id: {ticket.broker_order_id ?? "-"}</p>
+          <p>Submitted at: {ticket.broker_submitted_at ?? "-"}</p>
+          <p>Broker updated at: {ticket.broker_updated_at ?? "-"}</p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={submitTicketToPaper}
+            disabled={!canSubmitToPaper || isPending}
+            className="rounded-card border border-accent/25 bg-accent px-3 py-1.5 text-xs font-semibold text-surface-0 disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {submitToPaper.isPending ? "Submitting…" : "Submit to Paper"}
+          </button>
+          <button
+            type="button"
+            onClick={refreshBrokerStatus}
+            disabled={!ticket.broker_order_id || isPending}
+            className="rounded-card border border-white/10 px-3 py-1.5 text-xs font-semibold text-ink-2 disabled:opacity-50 disabled:pointer-events-none"
+          >
+            {refreshFromPaper.isPending ? "Refreshing…" : "Refresh broker status"}
+          </button>
+          {!canSubmitToPaper ? (
+            <span className="text-xs text-ink-4">Submission disabled for current status.</span>
+          ) : null}
+        </div>
+
+        {ticket.submission_error_message ? (
+          <p className="text-xs text-danger">{ticket.submission_error_message}</p>
+        ) : null}
+      </div>
+
+      {submissionNotice ? <p className="text-xs text-success">{submissionNotice}</p> : null}
 
       {panelError ? <p className="text-xs text-danger">{panelError}</p> : null}
     </div>

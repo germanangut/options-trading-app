@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from typing import Any
 
 from backend.contracts.ticket_models import ExecutionTicket
 
@@ -55,3 +56,21 @@ class TicketRepository(ABC):
     @abstractmethod
     def clear(self, *, user_id: str | None = None) -> None:
         """Remove tickets.  Intended for tests and local reset flows."""
+
+    @abstractmethod
+    def record_submission_result(
+        self,
+        ticket_id: str,
+        *,
+        user_id: str,
+        execution_status: str,
+        broker_order_id: str | None,
+        broker_status_raw: str | None,
+        broker_submitted_at: str | None,
+        broker_updated_at: str | None,
+        last_submission_payload: dict[str, Any] | None,
+        last_submission_response: dict[str, Any] | None,
+        submission_error_message: str | None,
+        updated_at: str,
+    ) -> ExecutionTicket | None:
+        """Persist broker submission metadata and resulting execution status."""

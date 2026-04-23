@@ -18,6 +18,11 @@ from backend.services.ticket_service import (
     list_execution_tickets,
     patch_execution_ticket,
 )
+from backend.services.ticket_submission_service import (
+    TicketSubmissionError,
+    submit_ticket_to_paper,
+    refresh_ticket_broker_status,
+)
 
 
 router = APIRouter(prefix="/api/v1/tickets", tags=["tickets"])
@@ -122,4 +127,36 @@ def patch_ticket(
 
     if ticket is None:
         raise HTTPException(status_code=404, detail=f"Ticket '{ticket_id}' not found.")
+    return ticket
+
+
+@router.post("/{ticket_id}/submit-paper", response_model=ExecutionTicketResponse)
+def submit_ticket(
+    ticket_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, object]:
+    try:
+        ticket = submit_ticket_to_paper(ticket_id, user_id=current_user["user_id"])
+    except TicketSubmissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    if ticket is None:
+        raise HTTPException(status_code=404, detail=f"Ticket '{ticket_id}' not found.")
+
+    return ticket
+
+
+@router.post("/{ticket_id}/refresh-paper", response_model=ExecutionTicketResponse)
+def refresh_ticket(
+    ticket_id: str,
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, object]:
+    try:
+        ticket = refresh_ticket_broker_status(ticket_id, user_id=current_user["user_id"])
+    except TicketSubmissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+    if ticket is None:
+        raise HTTPException(status_code=404, detail=f"Ticket '{ticket_id}' not found.")
+
     return ticket

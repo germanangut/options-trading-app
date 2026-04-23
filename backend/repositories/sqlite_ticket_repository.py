@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 import sqlite3
+from typing import Any
 
 from backend.contracts.ticket_models import ExecutionTicket
 from backend.repositories.ticket_repository import TicketRepository
@@ -45,10 +47,24 @@ class SQLiteTicketRepository(TicketRepository):
                     execution_status            TEXT NOT NULL DEFAULT 'draft',
                     note                        TEXT,
                     created_at                  TEXT NOT NULL,
-                    updated_at                  TEXT NOT NULL
+                    updated_at                  TEXT NOT NULL,
+                    broker_order_id             TEXT,
+                    broker_status_raw           TEXT,
+                    broker_submitted_at         TEXT,
+                    broker_updated_at           TEXT,
+                    last_submission_payload     TEXT,
+                    last_submission_response    TEXT,
+                    submission_error_message    TEXT
                 )
                 """
             )
+            self._ensure_column(connection, "execution_ticket", "broker_order_id", "TEXT")
+            self._ensure_column(connection, "execution_ticket", "broker_status_raw", "TEXT")
+            self._ensure_column(connection, "execution_ticket", "broker_submitted_at", "TEXT")
+            self._ensure_column(connection, "execution_ticket", "broker_updated_at", "TEXT")
+            self._ensure_column(connection, "execution_ticket", "last_submission_payload", "TEXT")
+            self._ensure_column(connection, "execution_ticket", "last_submission_response", "TEXT")
+            self._ensure_column(connection, "execution_ticket", "submission_error_message", "TEXT")
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_ticket_owner_updated
@@ -67,6 +83,30 @@ class SQLiteTicketRepository(TicketRepository):
                 ON execution_ticket (owner_user_id, execution_status)
                 """
             )
+
+    def _ensure_column(
+        self,
+        connection: sqlite3.Connection,
+        table_name: str,
+        column_name: str,
+        definition: str,
+    ) -> None:
+        columns = connection.execute(f"PRAGMA table_info({table_name})").fetchall()
+        existing_names = {str(column[1]) for column in columns}
+        if column_name in existing_names:
+            return
+        connection.execute(
+            f"ALTER TABLE {table_name} ADD COLUMN {column_name} {definition}"
+        )
+
+    def _parse_json_blob(self, value: str | None) -> dict[str, Any] | None:
+        if not value:
+            return None
+        try:
+            parsed = json.loads(value)
+        except (TypeError, json.JSONDecodeError):
+            return None
+        return parsed if isinstance(parsed, dict) else None
 
     def _row_to_ticket(self, row: sqlite3.Row | None) -> ExecutionTicket | None:
         if row is None:
@@ -93,6 +133,13 @@ class SQLiteTicketRepository(TicketRepository):
             note=row["note"],
             created_at=row["created_at"],
             updated_at=row["updated_at"],
+            broker_order_id=row["broker_order_id"],
+            broker_status_raw=row["broker_status_raw"],
+            broker_submitted_at=row["broker_submitted_at"],
+            broker_updated_at=row["broker_updated_at"],
+            last_submission_payload=self._parse_json_blob(row["last_submission_payload"]),
+            last_submission_response=self._parse_json_blob(row["last_submission_response"]),
+            submission_error_message=row["submission_error_message"],
         )
 
     def create_ticket(self, ticket: ExecutionTicket) -> ExecutionTicket:
@@ -106,7 +153,10 @@ class SQLiteTicketRepository(TicketRepository):
                     underlying_price_at_creation, net_credit_estimate,
                     max_risk_estimate, adjusted_score_at_creation,
                     quantity, order_intent, execution_status, note,
-                    created_at, updated_at
+                    created_at, updated_at,
+                    broker_order_id, broker_status_raw, broker_submitted_at,
+                    broker_updated_at, last_submission_payload,
+                    last_submission_response, submission_error_message
                 ) VALUES (
                     ?, ?, ?, ?,
                     ?, ?, ?, ?,
@@ -114,7 +164,9 @@ class SQLiteTicketRepository(TicketRepository):
                     ?, ?,
                     ?, ?,
                     ?, ?, ?, ?,
-                    ?, ?
+                    ?, ?,
+                    ?, ?, ?,
+                    ?, ?, ?, ?
                 )
                 """,
                 (
@@ -139,6 +191,13 @@ class SQLiteTicketRepository(TicketRepository):
                     ticket.note,
                     ticket.created_at,
                     ticket.updated_at,
+                    ticket.broker_order_id,
+                    ticket.broker_status_raw,
+                    ticket.broker_submitted_at,
+                    ticket.broker_updated_at,
+                    json.dumps(ticket.last_submission_payload) if ticket.last_submission_payload else None,
+                    json.dumps(ticket.last_submission_response) if ticket.last_submission_response else None,
+                    ticket.submission_error_message,
                 ),
             )
         stored = self.get_ticket(ticket.ticket_id, user_id=ticket.owner_user_id)
@@ -245,3 +304,57 @@ class SQLiteTicketRepository(TicketRepository):
                     "DELETE FROM execution_ticket WHERE owner_user_id = ?",
                     (user_id,),
                 )
+
+    def record_submission_result(
+        self,
+        ticket_id: str,
+        *,
+        user_id: str,
+        execution_status: str,
+        broker_order_id: str | None,
+        broker_status_raw: str | None,
+        broker_submitted_at: str | None,
+        broker_updated_at: str | None,
+        last_submission_payload: dict[str, Any] | None,
+        last_submission_response: dict[str, Any] | None,
+        submission_error_message: str | None,
+        updated_at: str,
+    ) -> ExecutionTicket | None:
+        if not ticket_id or not user_id:
+            return None
+
+        existing = self.get_ticket(ticket_id, user_id=user_id)
+        if existing is None:
+            return None
+
+        with self._connect() as connection:
+            connection.execute(
+                """
+                UPDATE execution_ticket
+                SET execution_status = ?,
+                    broker_order_id = ?,
+                    broker_status_raw = ?,
+                    broker_submitted_at = ?,
+                    broker_updated_at = ?,
+                    last_submission_payload = ?,
+                    last_submission_response = ?,
+                    submission_error_message = ?,
+                    updated_at = ?
+                WHERE ticket_id = ? AND owner_user_id = ?
+                """,
+                (
+                    execution_status,
+                    broker_order_id,
+                    broker_status_raw,
+                    broker_submitted_at,
+                    broker_updated_at,
+                    json.dumps(last_submission_payload) if last_submission_payload else None,
+                    json.dumps(last_submission_response) if last_submission_response else None,
+                    submission_error_message,
+                    updated_at,
+                    ticket_id,
+                    user_id,
+                ),
+            )
+
+        return self.get_ticket(ticket_id, user_id=user_id)
