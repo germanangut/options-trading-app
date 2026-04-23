@@ -236,10 +236,30 @@ All endpoints are auth-protected and scoped to the authenticated user.
 
 ### Frontend integration
 
-Lifecycle state badges and action buttons appear on:
+PU-15A.2 refines lifecycle interactions so the user experience feels like a real review workflow rather than raw state mutation.
 
-- **Qualified Trades** — each card shows the current state label and offers Save, Watch, Mark Ready, and Dismiss actions
-- **Trade Detail** — shows the current state chip, same actions, and a note textarea with a Save note action
+**Qualified Trades board**
+
+- Each card shows a `LifecycleBadge` (`new / saved / watching / ready / dismissed`) with a colored dot
+- `LifecycleActions` renders the three forward-progress actions (Save, Watch, Mark Ready) in order, with the active state visually highlighted (accent for saved/watching, success for execution_ready), and Dismiss isolated to the trailing edge as a quieter destructive action
+- A lifecycle filter tab row above the trade list lets the operator narrow to `All / New / Saved / Watching / Ready / Dismissed` — each tab shows the count for that state
+- Error feedback surfaces via a `WarningBand` when a lifecycle upsert fails
+
+**Trade Detail execution brief**
+
+- The lifecycle section opens with a `LifecycleBadge` and a contextual description of what the current state means for the review workflow
+- `LifecycleActions` replaces the raw button row with the same active-state and dismiss-isolation treatment
+- The review note section has two modes:
+	- **Read mode**: displays the saved note as text with an Edit button; shows "Add a note about this trade…" when no note is saved
+	- **Edit mode**: textarea with Save note (primary, disabled until changed) and Cancel; Save triggers a 2.5-second "Saved" confirmation flash then returns to read mode
+- All lifecycle errors surface via the component's `errorMessage` prop
+
+**Deferred to PU-15A.3**
+
+- Paper order submission and paper execution state transitions
+- Lifecycle history view and per-trade state change log
+- Lifecycle analytics (how long trades stay at each state, transition rates)
+- Broker-facing orchestration (PU-15A.4)
 
 ### Scope boundaries in this phase
 
@@ -247,8 +267,6 @@ Lifecycle state badges and action buttons appear on:
 - No paper order submission workflow
 - No execution automation
 - Lifecycle records are user-owned and do not alter scan output or scoring
-
-Later phases (PU-15A.2 and PU-15A.4) will extend the model with paper execution transitions, lifecycle history analytics, and broker-facing orchestration.
 
 ## Repository pointers
 

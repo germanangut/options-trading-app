@@ -13,16 +13,6 @@ vi.mock("../features/scans/hooks/useLatestScan", () => ({
 vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
   useLifecycleRecords: vi.fn(),
   useUpsertTradeLifecycle: vi.fn(),
-  getLifecycleStateLabel: vi.fn((state?: string) => {
-    const map: Record<string, string> = {
-      new: "New",
-      saved: "Saved",
-      watching: "Watching",
-      execution_ready: "Execution Ready",
-      dismissed: "Dismissed",
-    };
-    return map[state ?? "new"] ?? "New";
-  }),
 }));
 
 
@@ -210,7 +200,53 @@ describe("QualifiedTradesPage", () => {
     expect(screen.getByText("Why It Qualified")).toBeInTheDocument();
     expect(screen.getByText("Risk Frame")).toBeInTheDocument();
     expect(screen.getByText("Portfolio Impact")).toBeInTheDocument();
-    expect(screen.getByText("Lifecycle: Watching")).toBeInTheDocument();
+    // Lifecycle badge renders state label (replaces old "Lifecycle: Watching" text)
+    expect(screen.getAllByText("Watching").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /review execution brief/i })).toHaveAttribute("href", "/scans/scan_partial/trades/trade_1");
+  });
+
+  it("renders lifecycle filter tabs", () => {
+    mockLifecycleHooks([{ trade_id: "trade_1", lifecycle_state: "watching" }]);
+    const scan = buildPartialScan();
+    scan.diagnostics = { ...scan.diagnostics, missing_tickers: [], partial_result: false };
+    scan.summary = { qualified_count: 1, near_miss_count: 0, top_overall: null, top_bull_put: null, top_bear_call: null };
+    scan.qualified_trades = [
+      {
+        trade_id: "trade_1",
+        ticker: "AAPL",
+        strategy_type: "bull_put_spread",
+        strategy_label: "Bull Put Spread",
+        expiration_date: "2026-05-15",
+        DTE: 28,
+        short_strike: 180,
+        long_strike: 175,
+        POP: 67,
+        ROR: 22,
+        score: 72,
+        adjusted_score: 74,
+        label: "High Quality",
+        decision_summary: "Constructive premium.",
+        directional_bias: "bullish",
+        status_reason: "Support held.",
+        volatility_context: "balanced_premium",
+        stability_level: "stable",
+        stability_count: 3,
+        net_credit: 1.45,
+        spread_width: 5,
+        max_risk: 355,
+      },
+    ];
+
+    vi.mocked(useLatestScan).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: scan,
+    } as ReturnType<typeof useLatestScan>);
+
+    render(<MemoryRouter><QualifiedTradesPage /></MemoryRouter>);
+
+    expect(screen.queryByRole("tab", { name: /All/i })).not.toBeNull();
+    expect(screen.queryByRole("tab", { name: /New/i })).not.toBeNull();
+    expect(screen.queryByRole("tab", { name: /Watching/i })).not.toBeNull();
   });
 });

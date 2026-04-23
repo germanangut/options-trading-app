@@ -4,6 +4,8 @@ import { Link, useParams } from "react-router-dom";
 import { ActionRow } from "../components/ui/ActionRow";
 import { ChartPanel } from "../components/ui/ChartPanel";
 import { EmptyState } from "../components/ui/EmptyState";
+import { LifecycleActions } from "../components/ui/LifecycleActions";
+import { LifecycleBadge } from "../components/ui/LifecycleBadge";
 import { MetricStrip } from "../components/ui/MetricStrip";
 import { MiniPayoffCue } from "../components/ui/MiniPayoffCue";
 import { PageShell } from "../components/ui/PageShell";
@@ -14,7 +16,7 @@ import { Chip } from "../components/ui/Chip";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useScanById } from "../features/scans/hooks/useScanById";
 import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
-import { getLifecycleStateLabel, useTradeLifecycle, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
+import { useTradeLifecycle, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
 import { selectTradeDetailExperienceModel } from "../features/scans/selectors/decisionExperienceSelectors";
 import { describeApiError } from "../lib/apiErrors";
 
@@ -24,11 +26,15 @@ export function QualifiedTradeDetailPage() {
   const detailQuery = useTradeDetail(scanId, tradeId);
   const lifecycleQuery = useTradeLifecycle(tradeId);
   const upsertLifecycle = useUpsertTradeLifecycle();
+  const savedNote = lifecycleQuery.data?.note ?? null;
+  const [noteEditing, setNoteEditing] = useState(false);
   const [noteDraft, setNoteDraft] = useState("");
+  const [noteJustSaved, setNoteJustSaved] = useState(false);
 
   useEffect(() => {
-    setNoteDraft(lifecycleQuery.data?.note ?? "");
-  }, [lifecycleQuery.data?.note]);
+    setNoteDraft(savedNote ?? "");
+    setNoteEditing(false);
+  }, [savedNote]);
 
   if (scanQuery.isLoading || detailQuery.isLoading) {
     return <EmptyState title="Loading trade detail" message="Waiting for the trade brief and scan context." />;
@@ -58,15 +64,17 @@ export function QualifiedTradeDetailPage() {
 
   const model = selectTradeDetailExperienceModel(scanQuery.data, detailQuery.data);
   const lifecycleState = lifecycleQuery.data?.lifecycle_state ?? "new";
-  const lifecycleLabel = getLifecycleStateLabel(lifecycleState);
   const supportNotes = model.whyThisTrade.slice(0, 4);
   const contextNotes = [...model.stability.notes, ...model.historyStory, ...model.portfolioImpact.notes.slice(1)].slice(0, 4);
 
-  function setLifecycleState(nextState: "saved" | "watching" | "execution_ready" | "dismissed") {
-    if (!tradeId) {
-      return;
-    }
+  const lifecycleErrorMessage = upsertLifecycle.isError
+    ? (upsertLifecycle.error?.message ?? "Lifecycle update failed. Try again.")
+    : null;
 
+  const noteDraftChanged = noteDraft.trim() !== (savedNote ?? "").trim();
+
+  function setLifecycleState(nextState: "saved" | "watching" | "execution_ready" | "dismissed") {
+    if (!tradeId) return;
     upsertLifecycle.mutate({
       tradeId,
       payload: {
@@ -77,17 +85,17 @@ export function QualifiedTradeDetailPage() {
   }
 
   function saveLifecycleNote() {
-    if (!tradeId) {
-      return;
-    }
-
-    upsertLifecycle.mutate({
-      tradeId,
-      payload: {
-        note: noteDraft.trim() || null,
-        source_scan_id: scanId ?? null,
+    if (!tradeId) return;
+    upsertLifecycle.mutate(
+      { tradeId, payload: { note: noteDraft.trim() || null, source_scan_id: scanId ?? null } },
+      {
+        onSuccess: () => {
+          setNoteEditing(false);
+          setNoteJustSaved(true);
+          setTimeout(() => setNoteJustSaved(false), 2500);
+        },
       },
-    });
+    );
   }
 
   return (
@@ -168,59 +176,86 @@ export function QualifiedTradeDetailPage() {
       </SectionFrame>
 
       <SectionFrame eyebrow="Lifecycle" title="Trade workflow state" subtitle="User-managed state is persistent and separate from scan qualification and ranking.">
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center gap-2">
-            <Chip tone="neutral">Current state: {lifecycleLabel}</Chip>
-            <button
-              type="button"
-              onClick={() => setLifecycleState("saved")}
-              disabled={upsertLifecycle.isPending}
-              className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              onClick={() => setLifecycleState("watching")}
-              disabled={upsertLifecycle.isPending}
-              className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
-            >
-              Watch
-            </button>
-            <button
-              type="button"
-              onClick={() => setLifecycleState("execution_ready")}
-              disabled={upsertLifecycle.isPending}
-              className="rounded-card border border-accent/25 bg-accent px-3 py-2 text-xs font-semibold text-surface-0"
-            >
-              Mark Ready
-            </button>
-            <button
-              type="button"
-              onClick={() => setLifecycleState("dismissed")}
-              disabled={upsertLifecycle.isPending}
-              className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
-            >
-              Dismiss
-            </button>
+        <div className="space-y-4">
+          {/* State badge + state description */}
+          <div className="flex flex-wrap items-center gap-3">
+            <LifecycleBadge state={lifecycleState} />
+            <span className="text-xs text-ink-4">
+              {lifecycleState === "new" && "Not yet reviewed — use the actions below to move this trade forward."}
+              {lifecycleState === "saved" && "Kept for later review. Revisit when conditions change."}
+              {lifecycleState === "watching" && "Actively monitoring this setup across scans."}
+              {lifecycleState === "execution_ready" && "Approved for execution consideration. Review the checklist before proceeding."}
+              {lifecycleState === "dismissed" && "Removed from active consideration. Restore by saving or watching again."}
+            </span>
           </div>
-          <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-4">Lifecycle note</label>
-            <textarea
-              value={noteDraft}
-              onChange={(event) => setNoteDraft(event.target.value)}
-              rows={3}
-              className="w-full rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-sm text-ink-2"
-              placeholder="Optional note for this trade state"
-            />
-            <button
-              type="button"
-              onClick={saveLifecycleNote}
-              disabled={upsertLifecycle.isPending}
-              className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
-            >
-              Save note
-            </button>
+
+          {/* Action buttons */}
+          <LifecycleActions
+            currentState={lifecycleState}
+            onTransition={setLifecycleState}
+            isPending={upsertLifecycle.isPending}
+            errorMessage={lifecycleErrorMessage}
+          />
+
+          {/* Note editor */}
+          <div className="rounded-card border border-white/8 bg-surface-overlay/40 p-3 space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-4">Review note</p>
+              {noteJustSaved ? (
+                <span className="text-xs text-success" role="status">Saved</span>
+              ) : savedNote && !noteEditing ? (
+                <button
+                  type="button"
+                  onClick={() => { setNoteDraft(savedNote); setNoteEditing(true); }}
+                  className="text-xs text-ink-3 hover:text-ink-2"
+                >
+                  Edit
+                </button>
+              ) : null}
+            </div>
+
+            {noteEditing ? (
+              <div className="space-y-2">
+                <textarea
+                  value={noteDraft}
+                  onChange={(event) => setNoteDraft(event.target.value)}
+                  rows={3}
+                  className="w-full rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-sm text-ink-2 focus:outline-none focus:ring-1 focus:ring-accent/30"
+                  placeholder="Add a note about this trade state or review…"
+                  aria-label="Review note"
+                />
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={saveLifecycleNote}
+                    disabled={upsertLifecycle.isPending || !noteDraftChanged}
+                    className="rounded-card border border-accent/25 bg-accent px-3 py-1.5 text-xs font-semibold text-surface-0 disabled:opacity-50 disabled:pointer-events-none"
+                  >
+                    {upsertLifecycle.isPending ? "Saving…" : "Save note"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setNoteDraft(savedNote ?? ""); setNoteEditing(false); }}
+                    className="rounded-card border border-white/8 px-3 py-1.5 text-xs font-semibold text-ink-3"
+                  >
+                    Cancel
+                  </button>
+                  {noteDraftChanged ? (
+                    <span className="text-xs text-ink-4">Unsaved changes</span>
+                  ) : null}
+                </div>
+              </div>
+            ) : savedNote ? (
+              <p className="text-sm leading-6 text-ink-2">{savedNote}</p>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setNoteEditing(true)}
+                className="text-xs text-ink-4 hover:text-ink-3"
+              >
+                Add a note about this trade…
+              </button>
+            )}
           </div>
         </div>
       </SectionFrame>

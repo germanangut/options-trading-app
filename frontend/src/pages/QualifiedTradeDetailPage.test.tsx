@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router-dom";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { ScanResult, TradeDetailResponse } from "../types/api";
 import { QualifiedTradeDetailPage } from "./QualifiedTradeDetailPage";
@@ -16,19 +17,15 @@ vi.mock("../features/scans/hooks/useTradeDetail", () => ({
 vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
   useTradeLifecycle: vi.fn(),
   useUpsertTradeLifecycle: vi.fn(),
-  getLifecycleStateLabel: vi.fn((state?: string) => {
-    const map: Record<string, string> = {
-      new: "New",
-      saved: "Saved",
-      watching: "Watching",
-      execution_ready: "Execution Ready",
-      dismissed: "Dismissed",
-    };
-    return map[state ?? "new"] ?? "New";
-  }),
 }));
 
 const { useScanById } = await import("../features/scans/hooks/useScanById");
+
+afterEach(() => {
+  cleanup();
+  vi.clearAllMocks();
+});
+
 const { useTradeDetail } = await import("../features/scans/hooks/useTradeDetail");
 const { useTradeLifecycle, useUpsertTradeLifecycle } = await import("../features/scans/hooks/useTradeLifecycle");
 
@@ -198,13 +195,51 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("Strike ladder")).toBeInTheDocument();
     expect(screen.getByText("What to confirm next")).toBeInTheDocument();
     expect(screen.getByText("Portfolio context")).toBeInTheDocument();
-    expect(screen.getByText("Current state: Saved")).toBeInTheDocument();
+    // Lifecycle badge renders state label
+    expect(screen.getByText("Saved")).toBeInTheDocument();
+    // Action buttons present
     expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Watch" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Mark Ready" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Save note" })).toBeInTheDocument();
+    // Note read mode: saved note displayed as text, not in textarea
+    expect(screen.getByText("Hold for confirmation.")).toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: /review note/i })).toBeNull();
+    // Edit button available to enter edit mode
+    expect(screen.getByRole("button", { name: "Edit" })).toBeInTheDocument();
     expect(screen.getAllByText("Constructive premium with steady support.").length).toBeGreaterThan(0);
     expect(screen.getByText(/Defined risk is capped near/i)).toBeInTheDocument();
+  });
+
+  it("shows Add note prompt when no note is saved", () => {
+    vi.mocked(useScanById).mockReturnValue({
+      isLoading: false, isError: false, data: buildScan(),
+    } as ReturnType<typeof useScanById>);
+    vi.mocked(useTradeDetail).mockReturnValue({
+      isLoading: false, isError: false, data: buildDetail(),
+    } as ReturnType<typeof useTradeDetail>);
+    vi.mocked(useTradeLifecycle).mockReturnValue({
+      isLoading: false, isError: false,
+      data: {
+        trade_id: "trade_1", lifecycle_state: "new",
+        state_updated_at: "2026-04-22T10:00:00Z",
+        note: null, tags: [], source_scan_id: "scan_trade",
+        created_at: "2026-04-22T10:00:00Z", updated_at: "2026-04-22T10:00:00Z", is_default: false,
+      },
+    } as unknown as ReturnType<typeof useTradeLifecycle>);
+    vi.mocked(useUpsertTradeLifecycle).mockReturnValue({
+      mutate: vi.fn(), isPending: false,
+    } as unknown as ReturnType<typeof useUpsertTradeLifecycle>);
+
+    render(
+      <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
+        <Routes>
+          <Route path="/scans/:scanId/trades/:tradeId" element={<QualifiedTradeDetailPage />} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    expect(screen.getByText("Add a note about this trade…")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });
 });
