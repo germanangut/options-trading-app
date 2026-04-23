@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from backend.api.dependencies.auth import require_current_user
 from backend.api.schemas.variants import VariantSetResponse
 from backend.services.scan_service import get_scan_by_id, get_trade_by_id
+from backend.services.variant_comparison_service import build_variant_comparisons
 from backend.services.variant_service import generate_variants
 
 
@@ -35,6 +36,7 @@ def _variant_set_to_dict(variant_set) -> dict:
             "label": v.label,
             "rationale": v.rationale,
             "is_credit_estimated": v.is_credit_estimated,
+            "comparison": None,
             "payoff": None,
         }
         if v.payoff is not None:
@@ -62,6 +64,8 @@ def _variant_set_to_dict(variant_set) -> dict:
                 ],
             }
         variants_payload.append(v_dict)
+
+    variants_payload = build_variant_comparisons(variants_payload)
 
     return {
         "scan_id": variant_set.scan_id,

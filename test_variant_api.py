@@ -152,11 +152,32 @@ class TestVariantApiResponse:
         required = {
             "variant_type", "strategy_key", "short_strike", "long_strike",
             "net_credit", "spread_width", "max_profit", "max_loss", "breakeven",
-            "label", "rationale", "is_credit_estimated",
+            "label", "rationale", "is_credit_estimated", "comparison",
         }
         for variant in data["variants"]:
             for field in required:
                 assert field in variant, f"Missing field '{field}' in variant"
+
+    def test_comparison_payload_has_expected_deltas(self) -> None:
+        client = TestClient(app, raise_server_exceptions=False)
+        email = f"user_{uuid.uuid4().hex[:8]}@test.com"
+        headers = _register_and_get_headers(client, email)
+        scan_id, trade_id = _get_first_trade(client, headers)
+        data = client.get(
+            f"/api/v1/variants/scans/{scan_id}/trades/{trade_id}",
+            headers=headers,
+        ).json()
+
+        baseline = next(v for v in data["variants"] if v["variant_type"] == "baseline")
+        assert baseline["comparison"] is not None
+        assert baseline["comparison"]["is_baseline"] is True
+        assert baseline["comparison"]["delta_net_credit"] == 0.0
+
+        for variant in data["variants"]:
+            comparison = variant.get("comparison")
+            assert comparison is not None
+            assert "summary" in comparison
+            assert "delta_max_loss" in comparison
 
     def test_baseline_has_payoff(self) -> None:
         client = TestClient(app, raise_server_exceptions=False)

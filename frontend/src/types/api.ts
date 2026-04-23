@@ -316,6 +316,18 @@ export type StrategyVariant = {
   label: string;
   rationale: string;
   is_credit_estimated: boolean;
+  comparison: {
+    is_baseline: boolean;
+    delta_net_credit: number;
+    delta_max_profit: number;
+    delta_max_loss: number;
+    delta_breakeven: number;
+    delta_spread_width: number;
+    risk_reward_ratio: number | null;
+    delta_risk_reward_ratio: number | null;
+    summary: string;
+    safety_tradeoff: string;
+  } | null;
   payoff: PayoffAnalysis | null;
 };
 

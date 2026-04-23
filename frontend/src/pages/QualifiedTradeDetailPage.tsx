@@ -16,6 +16,7 @@ import { ScoreRibbon } from "../components/ui/ScoreRibbon";
 import { SectionFrame } from "../components/ui/SectionFrame";
 import { Chip } from "../components/ui/Chip";
 import { WarningBand } from "../components/ui/WarningBand";
+import { VisualStrategyLab } from "../components/ui/VisualStrategyLab";
 import { useScanById } from "../features/scans/hooks/useScanById";
 import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
 import { useTradePayoff } from "../features/scans/hooks/useTradePayoff";
@@ -256,6 +257,14 @@ export function QualifiedTradeDetailPage() {
           variantSet={variantsQuery.data}
           isLoading={variantsQuery.isLoading}
         />
+      </SectionFrame>
+
+      <SectionFrame
+        eyebrow="Visual strategy lab"
+        title="Payoff shape and trade-off lab"
+        subtitle="Compare baseline vs one variant at a time to keep payoff visuals clear and decision-focused."
+      >
+        <VisualStrategyLab variantSet={variantsQuery.data} isLoading={variantsQuery.isLoading} />
       </SectionFrame>
 
       <SectionFrame eyebrow="Lifecycle" title="Trade workflow state" subtitle="User-managed state is persistent and separate from scan qualification and ranking.">

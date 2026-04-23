@@ -430,6 +430,49 @@ Deferred beyond PU-15B.2:
 - portfolio-level scenario simulation
 - volatility/time-decay scenario simulation
 
+### Visual strategy lab (PU-15B.3)
+
+PU-15B.3 adds a compact visual strategy lab inside Qualified Trade Detail to compare baseline and available variants as a decision-support surface.
+
+Purpose in this phase:
+
+- make variant differences visually clear without changing scan selection or execution workflows
+- compare payoff shape and key economics in a compact, readable layout
+- explain what changed versus baseline in plain language
+
+Supported strategies and variants in PU-15B.3:
+
+- strategies: `bull_put_spread`, `bear_call_spread`
+- variants: `baseline`, `conservative`, `max_credit`
+
+Interaction model chosen:
+
+- baseline-pinned comparison
+- one selected comparison target (`conservative` or `max_credit`) at a time via compact tabs
+- side-by-side baseline and selected-variant expiration payoff charts to avoid overlay clutter
+
+Comparison metrics shown:
+
+- net credit
+- max profit
+- max loss
+- breakeven
+- spread width
+- payoff curve (expiration)
+- explicit delta-to-baseline summary from backend comparison payload
+
+Why delta-neutral is not included:
+
+- delta-neutral variants are intentionally deferred beyond PU-15B.3 to keep this phase scoped to current controlled spread variants and clear structural comparisons.
+
+Deferred beyond PU-15B.3:
+
+- full-screen strategy lab/workbench
+- manual strike editing
+- what-if sliders
+- multi-variant overlay with dense chart controls
+- volatility/time-decay scenario simulation layers
+
 ### Scope boundaries in this phase
 
 - No broker order placement
