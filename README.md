@@ -192,7 +192,7 @@ Backend:
 pytest
 ```
 
-Focused test files already cover scan APIs, auth flows, selector behavior, alert messaging, observability, and scan persistence.
+Focused test files already cover scan APIs, auth flows, selector behavior, alert messaging, observability, scan persistence, and trade lifecycle state transitions.
 
 ## Reliability posture
 
@@ -208,34 +208,47 @@ The backend remains the source of truth for scoring, qualification, alerts, port
 
 ## Trade lifecycle model (PU-15A.1)
 
-PU-15A.1 introduces a persistent lifecycle record for each trade_id so user workflow state can evolve across scans without changing scan qualification, scoring, alerts, ranking, or provider behavior.
+PU-15A.1 introduces a persistent, user-owned lifecycle record for each qualified trade so workflow state can evolve across scans without touching scan qualification, scoring, alerts, ranking, or provider behavior.
 
-Current lifecycle states in the model:
+### Lifecycle states
 
-- new
-- saved
-- watching
-- execution_ready
-- paper_submitted
-- paper_filled
-- paper_closed
-- dismissed
+| State | Phase | Description |
+| --- | --- | --- |
+| `new` | Active | Default state; candidate has not been acted on |
+| `saved` | Active | Operator has bookmarked the trade for later review |
+| `watching` | Active | Trade is under active monitoring |
+| `execution_ready` | Active | Operator has approved the setup for paper execution |
+| `dismissed` | Active | Trade has been intentionally set aside |
+| `paper_submitted` | Deferred | Paper order submitted (PU-15A.2) |
+| `paper_filled` | Deferred | Paper order filled (PU-15A.2) |
+| `paper_closed` | Deferred | Paper position closed (PU-15A.2) |
 
-Active states in this phase:
+### Lifecycle API endpoints
 
-- new
-- saved
-- watching
-- execution_ready
-- dismissed
+All endpoints are auth-protected and scoped to the authenticated user.
 
-In this phase, lifecycle is user-managed state only:
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/lifecycle` | List all lifecycle records for the current user |
+| `GET` | `/api/v1/lifecycle/{trade_id}` | Get lifecycle state for one trade; returns `new` with `is_default: true` if not yet set |
+| `POST` | `/api/v1/lifecycle/{trade_id}` | Create or update lifecycle state |
+| `PATCH` | `/api/v1/lifecycle/{trade_id}` | Partial update of state, note, tags, or source scan reference |
 
-- no broker order placement
-- no paper order submission workflow
-- no execution automation
+### Frontend integration
 
-Later phases (PU-15A.2 and PU-15A.4) will build on the same model to add paper execution transitions, execution history details, and broker-facing orchestration.
+Lifecycle state badges and action buttons appear on:
+
+- **Qualified Trades** — each card shows the current state label and offers Save, Watch, Mark Ready, and Dismiss actions
+- **Trade Detail** — shows the current state chip, same actions, and a note textarea with a Save note action
+
+### Scope boundaries in this phase
+
+- No broker order placement
+- No paper order submission workflow
+- No execution automation
+- Lifecycle records are user-owned and do not alter scan output or scoring
+
+Later phases (PU-15A.2 and PU-15A.4) will extend the model with paper execution transitions, lifecycle history analytics, and broker-facing orchestration.
 
 ## Repository pointers
 
