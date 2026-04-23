@@ -93,7 +93,7 @@ async def get_workbench_scenario(
         default="baseline",
         description="Width adjustment choice: narrower | baseline | wider",
     ),
-    current_user=Depends(require_current_user),
+    current_user: dict[str, str | None] = Depends(require_current_user),
 ):
     """Return a what-if workbench result for the selected trade.
 
@@ -116,11 +116,11 @@ async def get_workbench_scenario(
             detail=f"Invalid width_adjustment '{width_adjustment}'. Must be one of: {', '.join(WIDTH_OPTIONS)}",
         )
 
-    scan = get_scan_by_id(scan_id, user_id=current_user.user_id)
+    scan = get_scan_by_id(scan_id, user_id=current_user["user_id"])
     if scan is None:
         raise HTTPException(status_code=404, detail=f"Scan '{scan_id}' not found.")
 
-    trade = get_trade_by_id(scan_id, trade_id, user_id=current_user.user_id)
+    trade = get_trade_by_id(scan, trade_id)
     if trade is None:
         raise HTTPException(status_code=404, detail=f"Trade '{trade_id}' not found in scan '{scan_id}'.")
 
