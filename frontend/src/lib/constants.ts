@@ -8,6 +8,8 @@ export const QUERY_KEYS = {
   latestScan: ["latest-scan"] as const,
   scanById: ["scan-by-id"] as const,
   tradeDetail: ["trade-detail"] as const,
+  lifecycleList: ["lifecycle-list"] as const,
+  tradeLifecycle: ["trade-lifecycle"] as const,
 };
 
 export const DEFAULT_SCAN_REQUEST: ScanRequest = {

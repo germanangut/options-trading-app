@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 
 import { ActionRow } from "../components/ui/ActionRow";
@@ -13,6 +14,7 @@ import { Chip } from "../components/ui/Chip";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useScanById } from "../features/scans/hooks/useScanById";
 import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
+import { getLifecycleStateLabel, useTradeLifecycle, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
 import { selectTradeDetailExperienceModel } from "../features/scans/selectors/decisionExperienceSelectors";
 import { describeApiError } from "../lib/apiErrors";
 
@@ -20,6 +22,13 @@ export function QualifiedTradeDetailPage() {
   const { scanId, tradeId } = useParams();
   const scanQuery = useScanById(scanId);
   const detailQuery = useTradeDetail(scanId, tradeId);
+  const lifecycleQuery = useTradeLifecycle(tradeId);
+  const upsertLifecycle = useUpsertTradeLifecycle();
+  const [noteDraft, setNoteDraft] = useState("");
+
+  useEffect(() => {
+    setNoteDraft(lifecycleQuery.data?.note ?? "");
+  }, [lifecycleQuery.data?.note]);
 
   if (scanQuery.isLoading || detailQuery.isLoading) {
     return <EmptyState title="Loading trade detail" message="Waiting for the trade brief and scan context." />;
@@ -48,8 +57,38 @@ export function QualifiedTradeDetailPage() {
   }
 
   const model = selectTradeDetailExperienceModel(scanQuery.data, detailQuery.data);
+  const lifecycleState = lifecycleQuery.data?.lifecycle_state ?? "new";
+  const lifecycleLabel = getLifecycleStateLabel(lifecycleState);
   const supportNotes = model.whyThisTrade.slice(0, 4);
   const contextNotes = [...model.stability.notes, ...model.historyStory, ...model.portfolioImpact.notes.slice(1)].slice(0, 4);
+
+  function setLifecycleState(nextState: "saved" | "watching" | "execution_ready" | "dismissed") {
+    if (!tradeId) {
+      return;
+    }
+
+    upsertLifecycle.mutate({
+      tradeId,
+      payload: {
+        lifecycle_state: nextState,
+        source_scan_id: scanId ?? null,
+      },
+    });
+  }
+
+  function saveLifecycleNote() {
+    if (!tradeId) {
+      return;
+    }
+
+    upsertLifecycle.mutate({
+      tradeId,
+      payload: {
+        note: noteDraft.trim() || null,
+        source_scan_id: scanId ?? null,
+      },
+    });
+  }
 
   return (
     <PageShell
@@ -124,6 +163,64 @@ export function QualifiedTradeDetailPage() {
             <WarningBand tone={model.diagnostics.tone} title={model.diagnostics.title}>
               {model.diagnostics.message}
             </WarningBand>
+          </div>
+        </div>
+      </SectionFrame>
+
+      <SectionFrame eyebrow="Lifecycle" title="Trade workflow state" subtitle="User-managed state is persistent and separate from scan qualification and ranking.">
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <Chip tone="neutral">Current state: {lifecycleLabel}</Chip>
+            <button
+              type="button"
+              onClick={() => setLifecycleState("saved")}
+              disabled={upsertLifecycle.isPending}
+              className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              onClick={() => setLifecycleState("watching")}
+              disabled={upsertLifecycle.isPending}
+              className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
+            >
+              Watch
+            </button>
+            <button
+              type="button"
+              onClick={() => setLifecycleState("execution_ready")}
+              disabled={upsertLifecycle.isPending}
+              className="rounded-card border border-accent/25 bg-accent px-3 py-2 text-xs font-semibold text-surface-0"
+            >
+              Mark Ready
+            </button>
+            <button
+              type="button"
+              onClick={() => setLifecycleState("dismissed")}
+              disabled={upsertLifecycle.isPending}
+              className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
+            >
+              Dismiss
+            </button>
+          </div>
+          <div className="space-y-2">
+            <label className="text-xs font-semibold uppercase tracking-[0.12em] text-ink-4">Lifecycle note</label>
+            <textarea
+              value={noteDraft}
+              onChange={(event) => setNoteDraft(event.target.value)}
+              rows={3}
+              className="w-full rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-sm text-ink-2"
+              placeholder="Optional note for this trade state"
+            />
+            <button
+              type="button"
+              onClick={saveLifecycleNote}
+              disabled={upsertLifecycle.isPending}
+              className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
+            >
+              Save note
+            </button>
           </div>
         </div>
       </SectionFrame>

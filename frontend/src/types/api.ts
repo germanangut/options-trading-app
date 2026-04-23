@@ -269,3 +269,36 @@ export type TradeDetailResponse = {
     missing_tickers?: string[];
   };
 };
+
+export type TradeLifecycleState =
+  | "new"
+  | "saved"
+  | "watching"
+  | "execution_ready"
+  | "paper_submitted"
+  | "paper_filled"
+  | "paper_closed"
+  | "dismissed";
+
+export type TradeLifecycleRecord = {
+  trade_id: string;
+  lifecycle_state: TradeLifecycleState;
+  state_updated_at: string | null;
+  note: string | null;
+  tags: string[];
+  source_scan_id: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+  is_default: boolean;
+};
+
+export type TradeLifecycleListResponse = {
+  items: TradeLifecycleRecord[];
+};
+
+export type TradeLifecycleUpsertPayload = {
+  lifecycle_state?: TradeLifecycleState;
+  note?: string | null;
+  tags?: string[];
+  source_scan_id?: string | null;
+};

@@ -13,8 +13,24 @@ vi.mock("../features/scans/hooks/useTradeDetail", () => ({
   useTradeDetail: vi.fn(),
 }));
 
+vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
+  useTradeLifecycle: vi.fn(),
+  useUpsertTradeLifecycle: vi.fn(),
+  getLifecycleStateLabel: vi.fn((state?: string) => {
+    const map: Record<string, string> = {
+      new: "New",
+      saved: "Saved",
+      watching: "Watching",
+      execution_ready: "Execution Ready",
+      dismissed: "Dismissed",
+    };
+    return map[state ?? "new"] ?? "New";
+  }),
+}));
+
 const { useScanById } = await import("../features/scans/hooks/useScanById");
 const { useTradeDetail } = await import("../features/scans/hooks/useTradeDetail");
+const { useTradeLifecycle, useUpsertTradeLifecycle } = await import("../features/scans/hooks/useTradeLifecycle");
 
 function buildScan(): ScanResult {
   return {
@@ -149,6 +165,25 @@ describe("QualifiedTradeDetailPage", () => {
       isError: false,
       data: buildDetail(),
     } as ReturnType<typeof useTradeDetail>);
+    vi.mocked(useTradeLifecycle).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        trade_id: "trade_1",
+        lifecycle_state: "saved",
+        state_updated_at: "2026-04-22T10:00:00Z",
+        note: "Hold for confirmation.",
+        tags: [],
+        source_scan_id: "scan_trade",
+        created_at: "2026-04-22T10:00:00Z",
+        updated_at: "2026-04-22T10:00:00Z",
+        is_default: false,
+      },
+    } as ReturnType<typeof useTradeLifecycle>);
+    vi.mocked(useUpsertTradeLifecycle).mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+    } as ReturnType<typeof useUpsertTradeLifecycle>);
 
     render(
       <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
@@ -163,6 +198,12 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("Strike ladder")).toBeInTheDocument();
     expect(screen.getByText("What to confirm next")).toBeInTheDocument();
     expect(screen.getByText("Portfolio context")).toBeInTheDocument();
+    expect(screen.getByText("Current state: Saved")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Watch" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Mark Ready" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Dismiss" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save note" })).toBeInTheDocument();
     expect(screen.getAllByText("Constructive premium with steady support.").length).toBeGreaterThan(0);
     expect(screen.getByText(/Defined risk is capped near/i)).toBeInTheDocument();
   });

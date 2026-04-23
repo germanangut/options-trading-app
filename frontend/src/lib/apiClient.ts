@@ -90,4 +90,7 @@ export const apiClient = {
   post<T>(path: string, body: unknown) {
     return request<T>(path, { method: "POST", body });
   },
+  patch<T>(path: string, body: unknown) {
+    return request<T>(path, { method: "PATCH", body });
+  },
 };

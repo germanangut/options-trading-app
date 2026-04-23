@@ -8,11 +8,14 @@ import { SectionFrame } from "../components/ui/SectionFrame";
 import { TradeCard } from "../components/ui/TradeCard";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useLatestScan } from "../features/scans/hooks/useLatestScan";
+import { getLifecycleStateLabel, useLifecycleRecords, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
 import { selectQualifiedBoardModel } from "../features/scans/selectors/decisionExperienceSelectors";
 import { describeApiError } from "../lib/apiErrors";
 
 export function QualifiedTradesPage() {
   const latestScan = useLatestScan();
+  const lifecycleRecords = useLifecycleRecords();
+  const upsertLifecycle = useUpsertTradeLifecycle();
 
   if (latestScan.isLoading) {
     return <EmptyState title="Loading qualified trades" message="Waiting for the latest ranked board to open." />;
@@ -36,6 +39,24 @@ export function QualifiedTradesPage() {
   }
 
   const qualifiedTrades = selectQualifiedBoardModel(latestScan.data);
+  const lifecycleByTradeId = new Map(
+    (lifecycleRecords.data ?? []).map((record) => [record.trade_id, record]),
+  );
+
+  function setLifecycleState(tradeId: string | undefined, lifecycleState: "saved" | "watching" | "execution_ready" | "dismissed") {
+    if (!tradeId) {
+      return;
+    }
+
+    upsertLifecycle.mutate({
+      tradeId,
+      payload: {
+        lifecycle_state: lifecycleState,
+        source_scan_id: latestScan.data?.scan_metadata?.scan_id ?? null,
+      },
+    });
+  }
+
   const leadItem = qualifiedTrades.items[0] ?? null;
   const primarySummary = qualifiedTrades.summary.filter((item) => item.label === "Qualified" || item.label === "Portfolio Posture");
   const secondarySummary = qualifiedTrades.summary.filter((item) => item.label !== "Qualified" && item.label !== "Portfolio Posture");
@@ -132,7 +153,41 @@ export function QualifiedTradesPage() {
               actionLabel={item.actionLabel}
               footer={
                 <ActionRow>
-                  <span className="text-sm text-ink-4">Open the execution brief only after the card still looks right on risk, quality, and concentration.</span>
+                  <span className="text-sm text-ink-4">
+                    Lifecycle: {getLifecycleStateLabel(lifecycleByTradeId.get(item.id)?.lifecycle_state ?? "new")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setLifecycleState(item.id, "saved")}
+                    disabled={upsertLifecycle.isPending}
+                    className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLifecycleState(item.id, "watching")}
+                    disabled={upsertLifecycle.isPending}
+                    className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
+                  >
+                    Watch
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLifecycleState(item.id, "execution_ready")}
+                    disabled={upsertLifecycle.isPending}
+                    className="rounded-card border border-accent/25 bg-accent px-3 py-2 text-xs font-semibold text-surface-0"
+                  >
+                    Mark Ready
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLifecycleState(item.id, "dismissed")}
+                    disabled={upsertLifecycle.isPending}
+                    className="rounded-card border border-white/10 bg-surface-overlay/70 px-3 py-2 text-xs font-semibold text-ink-2"
+                  >
+                    Dismiss
+                  </button>
                 </ActionRow>
               }
             />

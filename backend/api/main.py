@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.cors import allowed_cors_origin_regex, allowed_cors_origins
 from backend.api.error_handlers import register_exception_handlers
 from backend.api.routes.auth import router as auth_router
+from backend.api.routes.lifecycle import router as lifecycle_router
 from backend.api.routes.ops import router as ops_router
 from backend.api.routes.scans import router as scans_router
 from backend.observability.context import bind_context, clear_context
@@ -93,6 +94,7 @@ register_exception_handlers(app)
 
 app.include_router(scans_router)
 app.include_router(auth_router)
+app.include_router(lifecycle_router)
 app.include_router(ops_router)
 
 log_event(logger, "app_configured", **get_safe_settings_summary())

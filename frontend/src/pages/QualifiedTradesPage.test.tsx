@@ -10,12 +10,41 @@ vi.mock("../features/scans/hooks/useLatestScan", () => ({
   useLatestScan: vi.fn(),
 }));
 
+vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
+  useLifecycleRecords: vi.fn(),
+  useUpsertTradeLifecycle: vi.fn(),
+  getLifecycleStateLabel: vi.fn((state?: string) => {
+    const map: Record<string, string> = {
+      new: "New",
+      saved: "Saved",
+      watching: "Watching",
+      execution_ready: "Execution Ready",
+      dismissed: "Dismissed",
+    };
+    return map[state ?? "new"] ?? "New";
+  }),
+}));
+
 
 const { useLatestScan } = await import("../features/scans/hooks/useLatestScan");
+const { useLifecycleRecords, useUpsertTradeLifecycle } = await import("../features/scans/hooks/useTradeLifecycle");
 
 afterEach(() => {
   cleanup();
 });
+
+function mockLifecycleHooks(records: Array<{ trade_id: string; lifecycle_state: string }> = []) {
+  vi.mocked(useLifecycleRecords).mockReturnValue({
+    data: records,
+    isLoading: false,
+    isError: false,
+  } as ReturnType<typeof useLifecycleRecords>);
+
+  vi.mocked(useUpsertTradeLifecycle).mockReturnValue({
+    mutate: vi.fn(),
+    isPending: false,
+  } as ReturnType<typeof useUpsertTradeLifecycle>);
+}
 
 
 function buildPartialScan(): ScanResult {
@@ -74,6 +103,7 @@ function buildPartialScan(): ScanResult {
 
 describe("QualifiedTradesPage", () => {
   it("explains that an empty board may reflect partial coverage", () => {
+    mockLifecycleHooks();
     vi.mocked(useLatestScan).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -93,6 +123,7 @@ describe("QualifiedTradesPage", () => {
   });
 
   it("suggests widening parameters when no qualified trades are returned from a healthy run", () => {
+    mockLifecycleHooks();
     const scan = buildPartialScan();
     scan.diagnostics = {
       ...scan.diagnostics,
@@ -120,6 +151,7 @@ describe("QualifiedTradesPage", () => {
   });
 
   it("renders contained ranked trade cards for qualified opportunities", () => {
+    mockLifecycleHooks([{ trade_id: "trade_1", lifecycle_state: "watching" }]);
     const scan = buildPartialScan();
     scan.diagnostics = {
       ...scan.diagnostics,
@@ -178,6 +210,7 @@ describe("QualifiedTradesPage", () => {
     expect(screen.getByText("Why It Qualified")).toBeInTheDocument();
     expect(screen.getByText("Risk Frame")).toBeInTheDocument();
     expect(screen.getByText("Portfolio Impact")).toBeInTheDocument();
+    expect(screen.getByText("Lifecycle: Watching")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: /review execution brief/i })).toHaveAttribute("href", "/scans/scan_partial/trades/trade_1");
   });
 });

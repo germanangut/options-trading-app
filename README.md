@@ -206,6 +206,37 @@ The current app includes a lightweight operational posture designed for real sca
 
 The backend remains the source of truth for scoring, qualification, alerts, portfolio interpretation, and run diagnostics.
 
+## Trade lifecycle model (PU-15A.1)
+
+PU-15A.1 introduces a persistent lifecycle record for each trade_id so user workflow state can evolve across scans without changing scan qualification, scoring, alerts, ranking, or provider behavior.
+
+Current lifecycle states in the model:
+
+- new
+- saved
+- watching
+- execution_ready
+- paper_submitted
+- paper_filled
+- paper_closed
+- dismissed
+
+Active states in this phase:
+
+- new
+- saved
+- watching
+- execution_ready
+- dismissed
+
+In this phase, lifecycle is user-managed state only:
+
+- no broker order placement
+- no paper order submission workflow
+- no execution automation
+
+Later phases (PU-15A.2 and PU-15A.4) will build on the same model to add paper execution transitions, execution history details, and broker-facing orchestration.
+
 ## Repository pointers
 
 - `backend/`: API routes, services, repositories, auth, and observability
