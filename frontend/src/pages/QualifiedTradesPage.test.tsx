@@ -43,7 +43,7 @@ function mockLifecycleHooks(records: Array<{ trade_id: string; lifecycle_state: 
   vi.mocked(useUpsertTradeLifecycle).mockReturnValue({
     mutate: vi.fn(),
     isPending: false,
-  } as ReturnType<typeof useUpsertTradeLifecycle>);
+  } as unknown as ReturnType<typeof useUpsertTradeLifecycle>);
 }
 
 

@@ -74,7 +74,7 @@ export type TradeIdentityFields = {
   score?: number;
   adjusted_score?: number;
   label?: string;
-  decision_summary?: string;
+  decision_summary?: string | null;
   directional_bias?: string;
   status_reason?: string;
   explanation?: string;

@@ -179,11 +179,11 @@ describe("QualifiedTradeDetailPage", () => {
         updated_at: "2026-04-22T10:00:00Z",
         is_default: false,
       },
-    } as ReturnType<typeof useTradeLifecycle>);
+    } as unknown as ReturnType<typeof useTradeLifecycle>);
     vi.mocked(useUpsertTradeLifecycle).mockReturnValue({
       mutate: vi.fn(),
       isPending: false,
-    } as ReturnType<typeof useUpsertTradeLifecycle>);
+    } as unknown as ReturnType<typeof useUpsertTradeLifecycle>);
 
     render(
       <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
