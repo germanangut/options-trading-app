@@ -1,138 +1,115 @@
 # Options Trading App
 
-`Options Trading App` is a Python + Streamlit decision-support tool for evaluating credit spread opportunities. It scans configured ticker groups, scores bull put and bear call setups using the existing engine rules, highlights the best current candidate, and adds run-health and historical context for review.
+Options Trading App is an authenticated decision-support workspace for reviewing credit spread opportunities. It runs scans across configured ticker groups, scores bull put and bear call setups, surfaces the highest-priority opportunities, and preserves enough history and diagnostics to explain what happened in the latest run.
 
-> This project is analytical only. It helps evaluate opportunities; it does **not** place live trades or automate execution.
+> This product is for analysis and review. It does not place orders or automate execution.
 
-## What the app looks like today
+## What the app is today
 
-The current Streamlit dashboard is organized around a practical review workflow: 
+The current product is split into two deployed surfaces:
 
-| Area | Purpose |
+- A React workspace in `frontend/` for operators
+- A FastAPI backend in `backend/` for auth, scan execution, persisted history, and diagnostics
+
+The main user workflow is:
+
+1. Sign in
+2. Run a scan with Guided or Expert controls
+3. Review the latest overview snapshot
+4. Inspect qualified trades, alerts, portfolio posture, history, and daily summary
+5. Open a qualified trade detail view for execution prep
+
+## Current product surfaces
+
+| Surface | Purpose |
 | --- | --- |
-| `Overview` | Shows the Top Decision, system signals, trade lifecycle, historical signal context, and system boundaries |
-| `Portfolio` | Summarizes current-run concentration, directional tilt, overlap, and sizing context |
-| `Alerts` | Surfaces fresh opportunities worth reviewing |
-| `Qualified Trades` | Focuses on the strongest current candidates that cleared the active thresholds |
-| `History` | Shows trend insights, recurring alerts, and historical context from prior runs |
-| `Daily Summary` | Gives a run-level interpretation of what the scan found |
-| `Raw Output` | Exposes the full structured engine response for inspection |
+| `Login` | Session entry for protected review flows |
+| `Overview` | Latest-run cockpit with top decision, trust signals, and what to review next |
+| `Qualified Trades` | Ranked review list of candidates that cleared the active thresholds |
+| `Qualified Trade Detail` | Execution-prep view for structure, verdict, and checklist framing |
+| `Alerts` | Shortlist of the freshest opportunities worth immediate review |
+| `Portfolio` | Exposure, directional balance, concentration, and overlap context |
+| `History` | Prior-run context, recurring signals, and trend continuity |
+| `Daily Summary` | Run-level interpretation of what the scan found |
 
-## Core capabilities
+## Product behavior
 
-- Uses Alpaca option data when credentials are available
-- Falls back to built-in mock data when credentials are not configured
-- Evaluates both **bull put spreads** and **bear call spreads**
-- Scores candidates using the engine’s existing **POP / ROR** logic and current rule set
-- Highlights a best current trade and explains why it surfaced
-- Tracks light historical context in `.history` for stability/trend review
-- Caches market data in `.cache` for faster repeat runs
-- Supports both a Streamlit UI and a CLI workflow
+- `Balanced` is calibrated to produce a modest number of alerts on a typical run instead of behaving like an almost-empty strict mode
+- Alerts are stricter than qualified trades, so a run can show qualified trades while still returning zero alerts
+- When a run has zero alerts, the UI explains whether no candidates qualified at all or whether candidates existed but did not pass alert thresholds
+- Expert mode allows operators to relax thresholds when they want more signal volume
+- Healthy empty states are treated as valid outcomes, not automatic failures
+- Partial provider coverage and degraded runs surface through diagnostics rather than disappearing into blank screens
 
-## Current system boundaries
+## Architecture at a glance
 
-The app is intended for **analysis and decision support**:
+### Frontend
 
-- Results reflect the current rules and available data
-- Missing tickers or provider issues can reduce coverage for a run
-- A run with no alerts or no qualified trades can still be a healthy outcome
-- Final trade decisions require user judgment
+- Vite-based React app in `frontend/`
+- Auth-protected routes for overview, qualified trades, alerts, portfolio, history, and daily summary
+- Selector-driven presentation layer that reshapes backend payloads without changing scoring logic
 
-## Productization readiness
+### Backend
 
-A lightweight productization posture definition lives in `infra/product_readiness.yaml`. It documents the app's current stage, intended internal usage model, boundaries, current deployment readiness, and the key requirements before wider sharing. The current deployment target decision is documented in `infra/deployment_target.md`.
+- FastAPI service in `backend/`
+- Token-based auth endpoints for register, login, logout, and current session lookup
+- Scan endpoints for latest scan retrieval, scan history access, overview snapshots, alerts, qualified trades, trade detail, portfolio, history, and daily summary
+- Health and readiness endpoints for deployment checks
 
-## Frontend UX-FINAL notes
+### Persistence and runtime state
 
-The React frontend in `frontend/` now follows a presentation-only decision workspace model. Backend scoring, qualification, alerts, and portfolio interpretation remain backend-owned; the frontend selector layer only reshapes that payload for review workflows.
+- Durable scan storage through `SCAN_DATABASE_PATH`
+- Run history stored under `HISTORY_DIR`
+- Cache data stored under `CACHE_DIR`
+- Optional live market data via Alpaca credentials, with mock mode available when credentials are absent
 
-UX-FINAL Phase 2 is a mockup-fidelity pass on top of that foundation. It does not introduce new trading logic or new product features; it narrows the gap between the live UI and the intended decision-support storytelling language.
+## Local development
 
-UX-FINAL Phase 3 is the final visual-storytelling and micro-polish pass. It keeps the same contracts and workflows, but pushes the UI from premium structured data toward a more orchestrated decision-support surface with clearer hierarchy, stronger explanatory graphics, and tighter layout rhythm.
+### Recommended startup
 
-- `Sidebar` supports two operating modes: `guided` for workflow-first setup and `expert` for direct threshold control
-- `Qualified Trades` is the primary ranked review surface and should preserve backend ordering without client-side re-ranking
-- `Qualified Trade Detail` is positioned as execution preparation, with verdict, structure, and checklist framing derived from selector output
-- Shared shell and semantic states should continue to surface partial, degraded, healthy-empty, and failed runs from the existing diagnostics contract
-- Reusable premium UI primitives live under `frontend/src/components/ui` and should be preferred over page-local shells for future UX work
+Use the included local launcher from the repository root:
 
-Phase 2 wording and composition principles:
-
-- Guided mode should ask for intent, not raw parameters; prefer plain-language choices such as timing, direction, and shortlist strictness
-- Expert mode should stay technical and precise; raw threshold labels belong there, not in Guided mode
-- Trade cards should read as self-contained decision stories: identity, why it qualified, risk shape, portfolio fit, and next action
-- Trade detail should feel like a continuous execution briefing rather than a stack of unrelated sections
-- Overview should behave like a cockpit for the latest run, emphasizing what happened, what matters, and what to review next
-- If a concept appears on multiple pages, reuse the same containment, chip language, warning placement, and action placement where possible
-
-Phase 3 visual storytelling principles:
-
-- Use explanatory visuals only when they help the operator understand quality, payoff shape, risk posture, or portfolio impact more quickly
-- Prefer a small set of reusable primitives over page-local decoration; current explanatory primitives include `ScoreRibbon`, `MiniPayoffCue`, and `PortfolioImpactBand`
-- Put the most decision-relevant object first: top opportunity, risk cue, trust state, or action guidance should be obvious at a glance
-- Keep warning states visible but controlled; caution should read as guidance, not alarm fatigue
-- Guided mode should feel like intent selection, while Expert mode should feel like a compact technical console
-- Decorative UI adds style without reducing cognitive effort; explanatory UI earns its place by helping the user read the decision faster or more accurately
-
-Frontend validation commands:
-
-```bash
-cd frontend
-npm test
-npm run build
-```
-
-## Quick start
-
-### 1) Create and activate a virtual environment
-
-```bash
-python -m venv venv
-```
-
-Activate it:
-
-**Windows PowerShell**
 ```powershell
-.\venv\Scripts\Activate.ps1
+.\run-dev.ps1
 ```
 
-**macOS / Linux**
-```bash
-source venv/bin/activate
+That starts:
+
+- The backend API on `http://127.0.0.1:8000`
+- The frontend on `http://localhost:5173`
+
+Optional flags:
+
+```powershell
+.\run-dev.ps1 -InstallFrontendDeps
 ```
 
-### 2) Install dependencies
+### Manual startup
 
-```bash
-pip install -r requirements.txt
+If your local environment is already prepared, run the services separately:
+
+```powershell
+uvicorn backend.api.main:app --host 127.0.0.1 --port 8000 --reload
 ```
 
-### 3) Optionally install the local test runner
-
-```bash
-pip install pytest
+```powershell
+cd frontend
+npm install
+npm run dev
 ```
 
-### 4) Run the Streamlit dashboard
+### Local URLs
 
-```bash
-streamlit run app.py
-```
-
-Then open `http://localhost:8501`.
-
-### 5) Or run the CLI directly
-
-```bash
-python main.py --profile balanced --group tech --alerts-only
-```
+- Frontend: `http://localhost:5173`
+- Backend docs: `http://127.0.0.1:8000/docs`
+- Health: `http://127.0.0.1:8000/health`
+- Ready: `http://127.0.0.1:8000/ready`
 
 ## Configuration
 
-The app reads defaults from `config.yaml` and merges them with runtime overrides and environment variables.
+Defaults are read from `config.yaml` and merged with runtime overrides and environment variables.
 
-Example `config.yaml`:
+Representative local configuration:
 
 ```yaml
 profile: balanced
@@ -141,18 +118,18 @@ ticker_group: tech
 pop_weight: 0.6
 ror_weight: 0.4
 
-min_score: 65
-min_consistency: 3
+min_score: 55
+min_consistency: 1
 
 dte_min: 20
 dte_max: 35
 ```
 
-Optional environment variables:
+Common environment variables:
 
 ```text
-ALPACA_API_KEY=your_api_key
-ALPACA_API_SECRET=your_api_secret
+ALPACA_API_KEY=
+ALPACA_API_SECRET=
 ALPACA_DATA_BASE_URL=https://data.alpaca.markets
 ALPACA_TRADING_BASE_URL=https://paper-api.alpaca.markets
 HISTORY_DIR=.history
@@ -172,344 +149,77 @@ PROVIDER_TICKER_DATA_CACHE_TTL_SECONDS=20
 PROVIDER_CONTRACTS_CACHE_TTL_SECONDS=120
 PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS=45
 PROVIDER_UNDERLYING_CACHE_TTL_SECONDS=15
+VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_AUTH_TOKEN_STORAGE_KEY=options-platform.auth-token
 ```
 
-## PU-14 performance and reliability posture
+## Deployment
 
-PU-14 improves runtime resilience and latency visibility without changing trading logic, scoring rules, or the existing top-level scan contract.
+Current deployment topology:
 
-### Retry policy
+- Frontend: Vercel with `frontend/` as the project root
+- Backend: Render web service using the repository `Dockerfile`
+- Persistence: mounted Render disk for SQLite, history, and cache data
 
-- Provider HTTP operations use bounded retries only for transient conditions such as timeouts, connection failures, and retryable upstream HTTP responses like `408`, `429`, `500`, `502`, `503`, and `504`
-- Default retry count is small: `2` retries beyond the initial attempt
-- Retries are timeout-aware and preserve both a per-attempt timeout through `PROVIDER_TIMEOUT_SECONDS` and an overall retry budget through `PROVIDER_TOTAL_TIMEOUT_SECONDS`
-- Backoff strategy is configurable through `PROVIDER_RETRY_STRATEGY` and defaults to capped exponential backoff so retries do not bunch into aggressive bursts under provider instability
-- Backoff delay starts from `PROVIDER_RETRY_BACKOFF_SECONDS` and is capped by `PROVIDER_RETRY_MAX_BACKOFF_SECONDS`
-- Auth, validation, malformed payload, and other non-transient provider failures are not retried
-- Retry scheduling and final request outcome are logged with retry count, retry exhaustion state, and retry-delay impact so repeated provider instability is visible in production logs
-- Scan diagnostics carry additive retry metadata through existing performance and provider-error diagnostics so the frontend can infer degraded provider conditions without a UI redesign
+Frontend deployment settings:
 
-### Cache policy
+- Framework preset: `Vite`
+- Build command: `npm run build`
+- Output directory: `dist`
 
-- Aggregated market-data responses use a short-lived cache controlled by `MARKET_DATA_CACHE_TTL_SECONDS`
-- An optional in-memory cache layer can be enabled with `PROVIDER_MEMORY_CACHE_ENABLED`; it is process-local, TTL-bound, and capped by `PROVIDER_MEMORY_CACHE_MAX_ENTRIES`
-- Healthy per-ticker normalized provider results use a short-lived in-memory cache controlled by `PROVIDER_TICKER_DATA_CACHE_TTL_SECONDS` to reduce repeated full ticker fetch pipelines during bursty scan usage
-- Provider sub-reads are cached independently with explicit TTLs:
-	- contracts: `PROVIDER_CONTRACTS_CACHE_TTL_SECONDS`
-	- option snapshots: `PROVIDER_SNAPSHOTS_CACHE_TTL_SECONDS`
-	- underlying trades: `PROVIDER_UNDERLYING_CACHE_TTL_SECONDS`
-- Cache reads are explicit and observable through cache hit or miss metadata, cache layer, cache age, cache key hashes, and estimated saved duration where available
-- Degraded provider responses are not persisted into the aggregated market-data cache, which avoids re-serving known provider failures as if they were healthy reads
-- Degraded or incomplete per-ticker provider results are not written into the in-memory ticker cache, which avoids corrupting later scans with partial provider state
-- Cache behavior is surfaced in structured diagnostics and logs as hit/miss metadata
+Backend deployment expectations:
 
-### Graceful degradation behavior
+- Health check: `GET /health`
+- Readiness check: `GET /ready`
+- Persistent disk mounted at `/var/data`
+- Production persistence paths under `/var/data`
 
-- A single ticker failure no longer fails the whole scan when other tickers can still be processed safely
-- Scan output preserves successful ticker results, failed ticker coverage gaps, and per-ticker diagnostics in the same response
-- Empty option chains, partial snapshot coverage, malformed provider payloads, and missing underlying data degrade individual tickers instead of terminating the full run when partial output is still possible
-- Frontend surfaces now distinguish between genuinely empty result sets and empty boards produced under partial coverage or provider degradation
+Detailed deployment notes live in `infra/render_vercel_deployment.md` and `render.yaml`.
 
-### Performance visibility
+## Testing
 
-- Structured logs now make scan bottlenecks easier to isolate through:
-	- total scan duration
-	- successful vs failed ticker counts
-	- provider duration
-	- total provider calls
-	- average provider latency
-	- retry backoff latency impact
-	- per-ticker processing duration
-	- per-ticker provider duration
-	- per-ticker cache hit/miss state
-	- per-ticker retry count
-	- persistence duration
-	- estimated cache time saved
-	- cache hit/miss behavior
-- Additive response diagnostics now include non-breaking scan, provider, ticker, and cache metadata for frontend messaging and operational debugging
-- The frontend surfaces a minimal performance summary using the existing diagnostics contract rather than a separate metrics API
+Frontend:
 
-### UX reliability states
-
-- The frontend keeps the existing layout and components, but now maps runtime diagnostics into clearer UX states while scans are running, partially complete, degraded, empty, or failed
-- The shared shell banner shows when a scan is in progress, keeps the last completed result visible, and can show elapsed time for the active run so the UI does not appear frozen
-- `diagnostics.partial_result`, `missing_tickers`, `provider_errors`, and `failed_ticker_count` now map to a shared `Partial results available` state so empty boards do not get misread as clean market conditions
-- Retry-aware and performance-aware degraded indicators are inferred from existing diagnostics such as `retry_count`, `average_provider_latency_ms`, `provider_duration_ms`, and `cache_hit_rate`
-- Healthy empty states now explain that no qualified trades or alerts were returned under the current thresholds and suggest broadening the ticker group or relaxing the score floor when appropriate
-- Frontend error messaging distinguishes between authentication failures, provider-side failures, and general platform failures using the existing HTTP status and error detail surface without changing backend contracts
-
-### Stabilization and integration validation
-
-- Authenticated lifecycle coverage now validates the practical review flow of register or login, run scan, fetch latest, review qualified trades, open trade detail, inspect history, and inspect alerts using the live backend contracts
-- Repeated scans are expected to replace only the latest-scan pointer; prior scans remain readable by `scan_id`, and refreshed history should continue to reflect the newest persisted run count
-- Missing latest scan data remains a `404` backend condition and a frontend empty state, not a fatal rendering error
-- Empty qualified or alert lists are valid outcomes when thresholds are strict; they should only be treated as degraded when diagnostics also report `partial_result`, missing tickers, or provider errors
-- Selector and page models now normalize sparse arrays and nested objects so tabs stay render-safe even if a persisted payload is missing optional sections
-- Structured JSON logs are the operational source of truth for request tracing; `request_started`, `scan_started`, `scan_completed`, and `request_completed` events should all be correlatable through the same `request_id`
-- Performance sanity for repeated scans should be interpreted from bounded retry metadata and cache diagnostics rather than wall-clock alone; repeated scans should show cache reuse when eligible and should not exceed the configured retry and total-timeout budgets
-
-### Performance metrics reference
-
-- Scan-level diagnostics under `diagnostics.performance` include `scan_duration_ms`, `ticker_count`, `processed_ticker_count`, `successful_ticker_count`, `failed_ticker_count`, `provider_duration_ms`, `processing_duration_ms`, and `history_duration_ms`
-- Provider-level diagnostics under `diagnostics.performance` include `total_provider_calls`, `average_provider_latency_ms`, `retry_count`, `retry_exhausted`, `retry_latency_impact_ms`, `cache_hit_rate`, `provider_call_reduction_count`, and `estimated_cache_saved_duration_ms`
-- Per-ticker diagnostics under `ticker_diagnostics[]` include `provider_status`, `provider_duration_ms`, `processing_duration_ms`, `cache_hit`, `cache_miss`, `retry_count`, and provider-specific request metadata
-- Structured logs now standardize scan start and end events, provider call completion and failure, cache usage, retry behavior, and ticker-level processing completion
-
-Interpretation notes:
-- `scan_duration_ms` is the end-to-end engine runtime before durable persistence
-- `provider_duration_ms` is the wall-clock duration of the provider phase, while `total_provider_request_duration_ms` sums the provider request durations used to compute averages
-- `retry_latency_impact_ms` tracks configured backoff delay added by retries; it is a visibility metric, not a full measure of all upstream waiting time
-- `estimated_cache_saved_duration_ms` is best-effort and based on prior observed request durations for reusable cache entries
-- `successful_ticker_count` counts tickers that completed without a provider error, even if a ticker later had no tradable contracts
-
-### Known limitations deferred beyond PU-14
-
-- no distributed or shared cache layer across backend instances
-- in-memory cache is single-instance and process-local, so it does not share warm state across replicas or restarts
-- no circuit breaker or provider failover beyond bounded retries and graceful degradation
-- no background scan queue, concurrency shaping, or job orchestration for large burst traffic
-- no dedicated metrics backend or tracing export; visibility remains log-first
-- persistence duration is captured in structured completion logs; the canonical stored ScanResult keeps only timings known before persistence so latest-scan reads stay consistent with persisted payloads
-- no stale-while-revalidate strategy or proactive refresh of cached provider reads
-
-## Common usage patterns
-
-### Streamlit UI
-
-```bash
-streamlit run app.py
+```powershell
+cd frontend
+npm test
+npm run build
 ```
 
-### Alerts-only JSON output
+Backend:
 
-```bash
-python main.py --profile balanced --group tech --alerts-only
+```powershell
+pytest
 ```
 
-- `min_consistency` represents the minimum number of historical appearances tracked through `stability_count`, not the scoring bonus.
-- Alerts are evaluated after stability enrichment and use the final `adjusted_score`, which includes volatility and stability contributions.
+Focused test files already cover scan APIs, auth flows, selector behavior, alert messaging, observability, and scan persistence.
 
-### Human-readable daily summary
+## Reliability posture
 
-```bash
-python main.py --profile balanced --group tech --daily-summary
-```
+The current app includes a lightweight operational posture designed for real scan review rather than a demo-only UI:
 
-### Export alerts to CSV
+- Bounded retries for transient provider failures
+- Cache-aware provider execution with short-lived response reuse
+- Partial-result handling when some tickers fail but others can still be scored
+- Structured diagnostics for degraded scans, latency, retry impact, and cache behavior
+- Shared frontend states for healthy-empty, partial, degraded, in-progress, and failed runs
 
-```bash
-python main.py --profile balanced --group tech --export-csv
-```
+The backend remains the source of truth for scoring, qualification, alerts, portfolio interpretation, and run diagnostics.
 
-## Docker and local container runs
+## Repository pointers
 
-For a simple VM-based operational setup, see `infra/vm_deployment.md`. For the current private/internal access approach, see `infra/access_model.md`.
-For the current cloud deployment path using Render and Vercel, see `infra/render_vercel_deployment.md`.
+- `backend/`: API routes, services, repositories, auth, and observability
+- `frontend/`: routed workspace, selectors, UI components, tests, and Vercel config
+- `infra/`: deployment and readiness notes
+- `history/` and `.history/`: persisted run artifacts and local runtime storage
+- `exports/`: generated exports from scan results
 
-Build the image:
+## Boundaries
 
-```bash
-docker build -t options-trading-app .
-```
-
-Run the UI:
-
-```bash
-docker run --rm -p 8501:8501 options-trading-app
-```
-
-Run with Compose (recommended for local consistency):
-
-```bash
-docker compose up --build
-```
-
-If you want to preserve history and cache between runs, keep the mounted data directories in place and/or provide `.env` values as needed.
-
-## Persistence posture
-
-The backend now uses a durable SQLite scan store for canonical `ScanResult` persistence.
-
-- Backend storage backend: SQLite
-- Default location: `.history/scan_store.sqlite`
-- Override with: `SCAN_DATABASE_PATH=/path/to/scan_store.sqlite`
-
-Why SQLite for PU-10:
-
-- it is built into Python and adds no new infrastructure burden
-- it keeps `scan_id` and `trade_id` durable across backend restarts
-- it is reliable enough for a single-instance internal product phase
-- it provides a clean repository seam for a later migration to Postgres or another managed database
-
-Migration posture:
-
-- The repository abstraction lives under `backend/repositories/`
-- Service orchestration remains in the backend service layer
-- A future cloud/database migration should swap the repository implementation rather than changing trading logic or API contracts
-- Canonical persisted scans are the authoritative backend source for latest scan, trade detail, and history reads
-- Legacy JSONL history files are compatibility-only fallback inputs for older runs that predate canonical persistence
-- Future database migration should preserve repository contracts and swap the backend implementation rather than changing API or trading logic
-
-## Auth and user ownership posture
-
-PU-11 adds app-owned identity and route protection without changing scan logic.
-
-- Authentication is local to this app and uses email/password plus opaque bearer sessions
-- User identity is not coupled to Alpaca or any broker account
-- Persisted scans are now user-owned through `owner_user_id`
-- Protected backend routes return only the authenticated user's latest scan, trade detail, alerts, portfolio, and history views
-- A separate `broker_connections` table exists as a future seam for broker linking without replacing app identity
-
-Current auth routes:
-
-- `POST /auth/register`
-- `POST /auth/login`
-- `POST /auth/logout`
-- `GET /auth/me`
-
-## Observability and security hardening
-
-PU-12 adds lightweight operational hardening for the FastAPI backend without changing trading logic.
-
-### Logging conventions
-
-- Backend logs are structured JSON lines emitted through a centralized logger helper
-- Request middleware attaches a per-request `request_id` and returns it as the `X-Request-ID` response header
-- Request context is propagated into service, repository, auth, and provider logs through context-local binding
-- Sensitive fields such as passwords, tokens, secrets, and API credentials are masked before logging
-
-### Logged event categories
-
-- `request_started`
-- `request_completed`
-- `request_failed`
-- `scan_started`
-- `scan_engine_started`
-- `scan_completed`
-- `scan_failed`
-- `scan_ticker_completed`
-- `scan_ticker_failed`
-- `persistence_read`
-- `persistence_write`
-- `auth_login_success`
-- `auth_login_failure`
-- `auth_logout`
-- `provider_request_started`
-- `provider_request_completed`
-- `provider_request_failed`
-- `provider_cache_used`
-- `provider_retry_scheduled`
-- security-adjacent events such as `token_validation_failed` and `unauthorized_access_attempt`
-
-### Error handling
-
-- API errors use a standardized envelope: `error.code`, `error.message`, `error.request_id`
-- Validation, auth, not-found, provider, and internal failures are handled centrally
-- Stack traces remain server-side only and are not exposed to API clients
-
-### Health and readiness
-
-- `GET /health` returns a simple liveness status
-- `GET /ready` checks persistence access, auth store access, config resolution, and provider mode readiness
-- Provider readiness is lightweight and does not perform an external API probe
-
-### Deployment and runtime notes
-
-- Logs are emitted as newline-delimited JSON on standard output and are intended to be consumed directly by Docker, container platforms, or external collectors
-- In containerized deployments, prefer platform log collection from stdout/stderr rather than writing application log files inside the container
-- `X-Request-ID` is accepted from upstream when present and echoed back to clients; only trust upstream-supplied request IDs when your reverse proxy or load balancer is under your control
-- If the app sits behind a public reverse proxy, configure that proxy to generate or sanitize request IDs instead of blindly forwarding arbitrary client-provided correlation headers
-- Keep `GET /ready` lightweight and focused on internal dependency readiness; it should not require live provider calls or external market-data reachability
-
-### Environment variables
-
-Existing runtime variables still apply, plus the following observability-oriented settings:
-
-- `APP_ENV`: environment label such as `development`, `test`, or `production`
-- `LOG_LEVEL`: backend log level, for example `INFO`, `DEBUG`, or `WARNING`
-- `LOG_FORMAT`: reserved seam for log formatting selection, currently JSON-oriented
-- `SENTRY_DSN`: optional external error tracking DSN
-- `ALPACA_API_KEY`
-- `ALPACA_API_SECRET`
-- `ALPACA_DATA_BASE_URL`
-- `ALPACA_TRADING_BASE_URL`
-- `HISTORY_DIR`
-- `CACHE_DIR`
-- `SCAN_DATABASE_PATH`
-- `AUTH_SESSION_TTL_HOURS`
-- `CORS_ALLOW_ORIGINS`
-- `CORS_ALLOW_ORIGIN_REGEX`
-
-### Cloud deployment
-
-- Backend target: Render
-- Frontend target: Vercel
-- Backend container/runtime details are defined in [Dockerfile](Dockerfile) and [render.yaml](render.yaml)
-- Frontend deployment settings are documented in [infra/render_vercel_deployment.md](infra/render_vercel_deployment.md) and [frontend/vercel.json](frontend/vercel.json)
-
-### Deferred to PU-13
-
-- external log aggregation and retention policy
-- real cloud secret manager integration
-- stronger deployment-time security headers and reverse-proxy hardening
-- metrics and tracing export to dedicated observability backends
-- active provider readiness probing with rate-limit-aware behavior
-
-## React compatibility notes
-
-Wave 2 adds backend-owned decision DTO shaping so React can stay presentation-only while simplifying some selectors.
-
-- Trade detail can prefer the dedicated backend trade-detail response instead of rebuilding execution-prep sections from the latest scan payload
-- Overview can consume a dedicated overview snapshot and comparison block instead of stitching together trust, comparison, and top-opportunity summaries client-side
-- Trade-specific history context is now available as a compact backend-owned section instead of being inferred only from generic history metadata
-
-## Project structure
-
-- `app.py` — Streamlit UI and presentation logic
-- `engine.py` — core scan engine and business rules
-- `ui/` — focused rendering helpers for overview, portfolio, alerts, and qualified trades
-- `main.py` — CLI entry point
-- `settings.py` — runtime configuration resolution
-- `data_provider.py` — market data access and provider fallback behavior
-- `history.py` / `history_reader.py` — persistence and trend/stability context
-- `output.py` — output formatting and export helpers
-- `infra/product_readiness.yaml` — lightweight definition of the current productization-readiness posture
-- `infra/deployment_target.md` — concise record of the selected deployment approach and rationale
-- `infra/vm_deployment.md` — practical guide for running the app on a single VM with Docker
-- `infra/access_model.md` — definition of the current private/internal access pattern and reverse proxy approach
-
-## Default ticker groups
-
-- `tech`: `NVDA`, `TSLA`, `META`, `AAPL`, `MSFT`
-- `index`: `SPY`, `QQQ`, `IWM`
-- `mixed`: `SPY`, `QQQ`, `AAPL`, `MSFT`, `NVDA`, `TSLA`, `INTC`, `AMD`, `AMZN`, `GOOGL`
-
-## Testing and validation
-
-Run the unit suite locally:
-
-```bash
-python -m pytest -q
-```
-
-For a lightweight source validation pass:
-
-```bash
-python -m compileall .
-```
-
-The current CI flow validates:
-
-- Python source compilation
-- unit tests with `pytest`
-- Docker image buildability with the existing `Dockerfile`
-
-## Notes
-
-- Historical scans are stored under `.history`
-- Market-data cache is stored under `.cache`
-- If Alpaca credentials are missing, the app falls back to mock data for development/testing
-- The UI is designed to help review opportunities, not to execute orders
+- This system supports review and decision preparation only
+- Trade selection still depends on operator judgment
+- Missing provider coverage can narrow a run without invalidating the rest of the result
+- Zero alerts can be a healthy outcome under the current filters
 
 ## License
 
