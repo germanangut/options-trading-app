@@ -419,3 +419,78 @@ def refresh_ticket_broker_status(ticket_id: str, *, user_id: str) -> dict[str, A
 def map_broker_status_for_tests(raw_status: str | None) -> str:
     """Test-facing helper to validate mapping behavior without network calls."""
     return _map_broker_status_to_execution_status(raw_status)
+
+
+def get_paper_broker_configuration() -> tuple[str, str, str]:
+    """Public helper for paper-only broker configuration checks."""
+    return _alpaca_credentials_and_url()
+
+
+def fetch_open_paper_positions(*, key: str, secret: str, trading_base_url: str) -> list[dict[str, Any]]:
+    url = f"{trading_base_url.rstrip('/')}/v2/positions"
+    timeout_seconds = max(1.0, float(get_settings().get("provider_timeout_seconds", 12)))
+
+    try:
+        response = requests.get(
+            url,
+            headers=_alpaca_headers(key, secret),
+            timeout=timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise TicketSubmissionError(
+            "Unable to fetch open paper positions.",
+            status_code=502,
+        ) from exc
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = []
+
+    if response.status_code >= 400:
+        message = _extract_message(payload if isinstance(payload, dict) else None) or "Unable to fetch open paper positions."
+        raise TicketSubmissionError(_sanitize_error_message(message) or "Unable to fetch open paper positions.", status_code=400)
+
+    if not isinstance(payload, list):
+        raise TicketSubmissionError("Paper positions response is not in the expected format.", status_code=502)
+
+    return [item for item in payload if isinstance(item, dict)]
+
+
+def fetch_recent_paper_orders(
+    *,
+    key: str,
+    secret: str,
+    trading_base_url: str,
+    limit: int = 100,
+) -> list[dict[str, Any]]:
+    bounded_limit = max(1, min(limit, 500))
+    url = f"{trading_base_url.rstrip('/')}/v2/orders"
+    timeout_seconds = max(1.0, float(get_settings().get("provider_timeout_seconds", 12)))
+
+    try:
+        response = requests.get(
+            url,
+            headers=_alpaca_headers(key, secret),
+            params={"status": "all", "limit": bounded_limit, "direction": "desc"},
+            timeout=timeout_seconds,
+        )
+    except requests.RequestException as exc:
+        raise TicketSubmissionError(
+            "Unable to fetch recent paper orders.",
+            status_code=502,
+        ) from exc
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = []
+
+    if response.status_code >= 400:
+        message = _extract_message(payload if isinstance(payload, dict) else None) or "Unable to fetch recent paper orders."
+        raise TicketSubmissionError(_sanitize_error_message(message) or "Unable to fetch recent paper orders.", status_code=400)
+
+    if not isinstance(payload, list):
+        raise TicketSubmissionError("Paper orders response is not in the expected format.", status_code=502)
+
+    return [item for item in payload if isinstance(item, dict)]

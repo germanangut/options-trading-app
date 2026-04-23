@@ -373,3 +373,57 @@ export type PatchTicketPayload = {
   clear_note?: boolean;
   execution_status?: "draft" | "ready" | null;
 };
+
+export type PaperPositionRow = {
+  symbol: string | null;
+  ticker: string | null;
+  qty: number | null;
+  side: string | null;
+  avg_entry_price: number | null;
+  market_value: number | null;
+  cost_basis: number | null;
+  unrealized_pl: number | null;
+  unrealized_plpc: number | null;
+  realized_pl: number | null;
+  broker_updated_at: string | null;
+  linked_ticket_id: string | null;
+  strategy_label: string | null;
+  directional_bias: string | null;
+  ticket_execution_status: ExecutionTicketStatus | null;
+  estimated_credit_or_debit: number | null;
+};
+
+export type PaperOrderHistoryRow = {
+  broker_order_id: string | null;
+  symbol: string | null;
+  status: string | null;
+  order_type: string | null;
+  side: string | null;
+  qty: number | null;
+  filled_qty: number | null;
+  filled_avg_price: number | null;
+  submitted_at: string | null;
+  updated_at: string | null;
+};
+
+export type PaperDashboardResponse = {
+  pending_orders: ExecutionTicket[];
+  open_positions: PaperPositionRow[];
+  closed_trades: ExecutionTicket[];
+  recent_orders: PaperOrderHistoryRow[];
+  summary: {
+    pending_count: number;
+    open_positions_count: number;
+    closed_count: number;
+    recent_orders_count: number;
+  };
+  data_source: {
+    mode: string;
+    app_history_source: string;
+    broker_live_data_available: boolean;
+    broker_live_data_warning: string | null;
+    status_refresh_attempted: boolean;
+    status_refresh_errors: string[];
+    generated_at: string;
+  };
+};

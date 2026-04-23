@@ -7,10 +7,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from backend.api.dependencies.auth import require_current_user
 from backend.api.schemas.ticket import (
     CreateExecutionTicketBody,
+    PaperDashboardResponse,
     ExecutionTicketListResponse,
     ExecutionTicketResponse,
     PatchExecutionTicketBody,
 )
+from backend.services.paper_dashboard_service import get_paper_dashboard
 from backend.services.ticket_service import (
     create_execution_ticket,
     get_execution_ticket,
@@ -84,6 +86,22 @@ def get_tickets_for_trade(
         return {"items": items}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/paper-dashboard", response_model=PaperDashboardResponse)
+def get_paper_dashboard_view(
+    refresh_status: bool = Query(default=False),
+    limit: int = Query(default=250, ge=1, le=500),
+    current_user: dict[str, str | None] = Depends(require_current_user),
+) -> dict[str, object]:
+    try:
+        return get_paper_dashboard(
+            user_id=current_user["user_id"],
+            refresh_status=refresh_status,
+            limit=limit,
+        )
+    except TicketSubmissionError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
 
 
 @router.get("/{ticket_id}", response_model=ExecutionTicketResponse)

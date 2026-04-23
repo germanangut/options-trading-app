@@ -64,6 +64,7 @@ function renderTopbar(initialEntry = "/", diagnosticsStatus?: {
         <Route path="/history" element={<><TopbarHarness diagnosticsStatus={diagnosticsStatus} onToggleDiagnostics={onToggleDiagnostics} /><div>History Screen</div></>} />
         <Route path="/daily-summary" element={<><TopbarHarness diagnosticsStatus={diagnosticsStatus} onToggleDiagnostics={onToggleDiagnostics} /><div>Daily Summary Screen</div></>} />
         <Route path="/portfolio" element={<><TopbarHarness diagnosticsStatus={diagnosticsStatus} onToggleDiagnostics={onToggleDiagnostics} /><div>Portfolio Screen</div></>} />
+        <Route path="/paper-dashboard" element={<><TopbarHarness diagnosticsStatus={diagnosticsStatus} onToggleDiagnostics={onToggleDiagnostics} /><div>Paper Dashboard Screen</div></>} />
         <Route path="/scans/:scanId/trades/:tradeId" element={<><TopbarHarness diagnosticsStatus={diagnosticsStatus} onToggleDiagnostics={onToggleDiagnostics} /><div>Trade Detail Screen</div></>} />
       </Routes>
     </MemoryRouter>,
@@ -107,6 +108,7 @@ describe("Topbar", () => {
       { label: "History", content: "History Screen" },
       { label: "Daily Summary", content: "Daily Summary Screen" },
       { label: "Portfolio", content: "Portfolio Screen" },
+      { label: "Paper Dashboard", content: "Paper Dashboard Screen" },
     ];
 
     destinations.forEach((destination) => {

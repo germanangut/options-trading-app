@@ -3,6 +3,7 @@ import type {
   CreateTicketPayload,
   ExecutionTicket,
   ExecutionTicketListResponse,
+  PaperDashboardResponse,
   PatchTicketPayload,
   ScanRequest,
   ScanResult,
@@ -85,4 +86,9 @@ export function refreshExecutionTicketFromPaper(ticketId: string): Promise<Execu
     `/api/v1/tickets/${encodeURIComponent(ticketId)}/refresh-paper`,
     {},
   );
+}
+
+export function getPaperDashboard(refreshStatus = false): Promise<PaperDashboardResponse> {
+  const query = refreshStatus ? "?refresh_status=true" : "";
+  return apiClient.get<PaperDashboardResponse>(`/api/v1/tickets/paper-dashboard${query}`);
 }

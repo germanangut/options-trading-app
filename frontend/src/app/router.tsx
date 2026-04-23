@@ -7,6 +7,7 @@ import { DailySummaryPage } from "../pages/DailySummaryPage";
 import { HistoryPage } from "../pages/HistoryPage";
 import { LoginPage } from "../pages/LoginPage";
 import { OverviewPage } from "../pages/OverviewPage";
+import { PaperDashboardPage } from "../pages/PaperDashboardPage";
 import { PortfolioPage } from "../pages/PortfolioPage";
 import { QualifiedTradeDetailPage } from "../pages/QualifiedTradeDetailPage";
 import { QualifiedTradesPage } from "../pages/QualifiedTradesPage";
@@ -68,6 +69,7 @@ const router = createBrowserRouter([
       { path: "portfolio", element: <PortfolioPage /> },
       { path: "history", element: <HistoryPage /> },
       { path: "daily-summary", element: <DailySummaryPage /> },
+      { path: "paper-dashboard", element: <PaperDashboardPage /> },
     ],
   },
 ]);

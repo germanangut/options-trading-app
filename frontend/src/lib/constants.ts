@@ -12,6 +12,7 @@ export const QUERY_KEYS = {
   tradeLifecycle: ["trade-lifecycle"] as const,
   ticketList: ["ticket-list"] as const,
   ticketsByTrade: ["tickets-by-trade"] as const,
+  paperDashboard: ["paper-dashboard"] as const,
 };
 
 export const DEFAULT_SCAN_REQUEST: ScanRequest = {
@@ -35,6 +36,7 @@ export const NAV_ITEMS = [
   { to: "/portfolio", label: "Portfolio", shortcut: "04" },
   { to: "/history", label: "History", shortcut: "05" },
   { to: "/daily-summary", label: "Daily Summary", shortcut: "06" },
+  { to: "/paper-dashboard", label: "Paper Dashboard", shortcut: "07" },
 ];
 
 export const PROFILE_OPTIONS = [

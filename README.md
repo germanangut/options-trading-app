@@ -305,6 +305,47 @@ Known limitations deferred to PU-15A.5:
 - richer order lifecycle handling (replace/cancel actions and historical timeline UI)
 - execution analytics, P&L attribution, and full operational dashboards
 
+### Paper positions dashboard (PU-15A.5)
+
+PU-15A.5 adds a dedicated paper-operations workspace focused on post-submission state, while preserving strict separation between scan analytics, lifecycle workflow state, execution tickets, and broker operational truth.
+
+Primary dashboard sections:
+
+- Pending Orders
+- Open Paper Positions
+- Closed Paper Trades
+- Recent broker order history
+
+Dashboard endpoints:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/tickets/paper-dashboard` | Return grouped pending/open/closed paper operational state |
+| `GET` | `/api/v1/tickets/paper-dashboard?refresh_status=true` | Same view with best-effort refresh of in-flight submitted/accepted tickets |
+
+Data sourcing approach (hybrid):
+
+- app-owned persisted ticket metadata remains the operational history backbone
+- optional broker enrichment pulls open positions and recent orders from Alpaca paper APIs
+- if broker credentials or broker fetches are unavailable, dashboard still renders from persisted ticket history with explicit warnings
+
+Status grouping approach:
+
+- Pending Orders: `draft`, `ready`, `submitted`, `accepted`
+- Open Paper Positions: live broker-reported open positions, optionally linked to filled tickets by symbol/ticker inference
+- Closed Paper Trades: ticket outcomes in terminal states (`rejected`, `canceled`, plus filled tickets not currently matched to open broker positions)
+
+P&L handling:
+
+- unrealized P&L is shown only from broker position fields when available
+- realized P&L is not inferred or fabricated in this phase when not directly trustworthy
+
+Current limitations deferred beyond PU-15A.5:
+
+- cancel/replace broker actions from dashboard surfaces
+- robust position-to-ticket attribution across every broker symbol edge case
+- advanced execution analytics and full performance attribution
+
 ### Scope boundaries in this phase
 
 - No broker order placement
