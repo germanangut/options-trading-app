@@ -413,6 +413,7 @@ export function selectAlertsModel(scanResult: ScanResult) {
   const diagnostics = scanDiagnostics(scanResult);
   const performance = (diagnostics.performance ?? {}) as Record<string, unknown>;
   const alerts = arrayOrEmpty(scanResult?.alerts);
+  const qualifiedCount = Number(scanResult?.summary?.qualified_count ?? 0);
   const failedTickerCount = resolveFailedTickerCount(
     diagnostics.provider_errors,
     diagnostics.missing_tickers,
@@ -422,6 +423,16 @@ export function selectAlertsModel(scanResult: ScanResult) {
   const partialCoverage = Boolean(diagnostics.partial_result)
     || diagnostics.provider_errors.length > 0
     || diagnostics.missing_tickers.length > 0;
+
+  const cleanEmptyState = qualifiedCount > 0
+    ? {
+        title: "No alerts this run",
+        message: "Qualified trades were found, but none passed the tighter alert filters. Alerts surface only the strongest candidates — not every qualified trade. To see more signal volume, adjust score and signal-history filters in Expert mode.",
+      }
+    : {
+        title: "No alerts this run",
+        message: "No qualified trades or alerts were produced in this run. Review Overview and Daily Summary, or widen the scan before adjusting alert filters.",
+      };
 
   return {
     total: alerts.length,
@@ -440,10 +451,7 @@ export function selectAlertsModel(scanResult: ScanResult) {
           title: "No alerts under partial coverage",
           message: "Some tickers were unavailable during the scan, so review diagnostics before treating this as a fully clean market pass.",
         }
-      : {
-          title: "No alerts",
-          message: "Nothing currently cleared the strongest alert thresholds. If you want a wider review set, broaden the ticker group or lower the score floor.",
-        },
+      : cleanEmptyState,
     rows: alerts.map((alert: AlertItem) => ({
       id: buildTemporaryTradeId(alert),
       trade: alert,

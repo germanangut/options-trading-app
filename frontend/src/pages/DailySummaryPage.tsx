@@ -46,7 +46,9 @@ export function DailySummaryPage() {
     ? `${formatTradeLabel(dailySummary.mostStableAlert)} is the most persistent signal worth checking after the best opportunity.`
     : dailySummary.alertSignals.some((signal) => Number(signal.value) > 0)
       ? "Alert pressure is present, so review the signal mix after the best opportunity." 
-      : "No repeated alert pressure is building, so keep the ranked board and overview as the next stop.";
+      : dailySummary.headline.qualifiedCount > 0
+        ? "No alerts this run — qualified trades were found, but none passed the tighter alert filters. Alerts surface only the strongest candidates. Adjust filters in Expert mode to see more signal volume."
+        : "No alert pressure and no qualified trades this run. Use Overview and Daily Summary as the next stop.";
   return (
     <PageShell eyebrow="Daily Summary" title="Daily scan recap" description="Use this page as a compact daily briefing: what happened, what matters, and what deserves follow-up next." className="gap-4">
       <Card eyebrow="Daily recap" title="What happened in this run" subtitle="Start with the recap first, then review the lead idea, signal mix, and follow-up pressure.">

@@ -33,8 +33,8 @@ export function AlertsPage() {
   const emptyStateFollowUp = alerts.partialNotice
     ? "Use diagnostics in the shell and the ranked board before treating this as a clean no-alert run."
     : qualifiedCount > 0
-      ? "No alert pressure is active, so stay with the ranked board and review the strongest qualified setup next."
-      : "No alert pressure is active, so review Overview and Daily Summary before widening the scan.";
+      ? "Qualified trades were found this run, but none passed the tighter alert filters. Alerts are meant to surface the strongest candidates, not every qualified trade. Want a broader signal set? Adjust score and signal-history filters in Expert mode."
+      : "No qualified trades were found this run either. Review Overview and Daily Summary, or widen the scan before adjusting alert filters.";
 
   return (
     <PageShell

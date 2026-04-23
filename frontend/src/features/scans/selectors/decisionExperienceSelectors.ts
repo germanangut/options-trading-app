@@ -487,7 +487,7 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
     },
     alertsSnapshot: {
       total: alertsCount,
-      title: alertsCount > 0 ? "Alert pressure is active" : "No extra alert pressure",
+      title: alertsCount > 0 ? "Alert pressure is active" : "No alerts this run",
       notes: alertsCount > 0
         ? [
             `${alertsCount} alert(s) are active in parallel with the ranked board.`,
@@ -495,9 +495,16 @@ export function selectOverviewCockpitModel(scanResult: ScanResult) {
               ? "Review the shortlist first, then use alerts to expand the review set if needed."
               : "Alerts may be the best secondary review surface when the shortlist is thin.",
           ]
-        : [
-            "Nothing outside the primary shortlist is pushing through the alert thresholds right now.",
-          ],
+        : qualifiedCount > 0
+          ? [
+              "Qualified trades were found, but none passed the tighter alert filters.",
+              "Alerts surface only the strongest candidates — not every qualified trade.",
+              "To see more signal volume, adjust score and signal-history filters in Expert mode.",
+            ]
+          : [
+              "No qualified trades or alerts were produced in this run.",
+              "Review Overview and Daily Summary, or widen the scan before adjusting alert filters.",
+            ],
     },
     nextActions: [
       { label: "Start with the ranked board", to: "/qualified" },

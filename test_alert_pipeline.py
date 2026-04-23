@@ -168,3 +168,74 @@ def test_balanced_profile_can_still_return_zero_alerts_consistently(monkeypatch,
     assert scan_result["daily_summary"]["stable_alert_count"] == 0
     assert scan_result["daily_summary"]["emerging_alert_count"] == 0
     assert scan_result["daily_summary"]["new_alert_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Balanced default threshold calibration tests
+# ---------------------------------------------------------------------------
+
+def test_balanced_profile_defaults_are_calibrated():
+    """Balanced profile must use the relaxed production defaults (min_score=55, min_consistency=1)."""
+    from profiles import PROFILES
+    balanced = PROFILES["balanced"]
+    assert balanced["min_score"] == 55, (
+        f"Balanced min_score should be 55, got {balanced['min_score']}"
+    )
+    assert balanced["min_consistency"] == 1, (
+        f"Balanced min_consistency should be 1, got {balanced['min_consistency']}"
+    )
+
+
+def test_conservative_profile_remains_stricter_than_balanced():
+    """Conservative must remain stricter than Balanced on both dimensions."""
+    from profiles import PROFILES
+    conservative = PROFILES["conservative"]
+    balanced = PROFILES["balanced"]
+    assert conservative["min_score"] >= balanced["min_score"], (
+        "Conservative min_score must be >= Balanced min_score"
+    )
+    assert conservative["min_consistency"] >= balanced["min_consistency"], (
+        "Conservative min_consistency must be >= Balanced min_consistency"
+    )
+
+
+def test_aggressive_profile_remains_at_most_as_strict_as_balanced():
+    """Aggressive thresholds must be <= Balanced so profile ordering is preserved."""
+    from profiles import PROFILES
+    aggressive = PROFILES["aggressive"]
+    balanced = PROFILES["balanced"]
+    assert aggressive["min_score"] <= balanced["min_score"], (
+        "Aggressive min_score must be <= Balanced min_score"
+    )
+    assert aggressive["min_consistency"] <= balanced["min_consistency"], (
+        "Aggressive min_consistency must be <= Balanced min_consistency"
+    )
+
+
+def test_alert_count_does_not_regress_when_thresholds_overridden(monkeypatch, tmp_path: Path):
+    """Overriding thresholds to strict values must still produce the expected alert count
+    (no silent regression introduced by the recalibration)."""
+    _force_mock_mode(monkeypatch, tmp_path)
+
+    monkeypatch.setattr(
+        engine,
+        "compute_alert_stability",
+        lambda: {
+            "MSFT|bull put spread": {"count": 2, "stability": "emerging"},
+        },
+    )
+
+    raw_output = run_scan_engine(
+        profile_name="balanced",
+        group_name="tech",
+        min_score=65,
+        min_consistency=3,
+        export_csv=False,
+        persist_history=False,
+    )
+
+    alerts = raw_output["alerts"]
+    assert any(
+        trade.get("ticker") == "MSFT" and trade.get("strategy_type") == "bull put spread"
+        for trade in alerts
+    ), "Overriding to min_score=65, min_consistency=3 must still surface the expected MSFT alert"

@@ -22,7 +22,7 @@ function buildScanResult(): ScanResult {
       selected_strategy_keys: ["bull_put_spread"],
       dte_range: { dte_min: 20, dte_max: 35 },
       scoring_weights: { pop_weight: 0.5, ror_weight: 0.5 },
-      alert_thresholds: { min_score: 65, min_consistency: 3 },
+      alert_thresholds: { min_score: 55, min_consistency: 1 },
       execution_time_seconds: 1.42,
       provider: "alpaca",
       request: {
@@ -31,10 +31,10 @@ function buildScanResult(): ScanResult {
         selected_strategy_keys: ["bull_put_spread"],
         dte_min: 20,
         dte_max: 35,
-        min_score: 65,
+        min_score: 55,
         min_pop: null,
         min_ror: null,
-        min_consistency: 3,
+        min_consistency: 1,
         alerts_only: false,
         use_mock_data: null,
       },
@@ -142,11 +142,37 @@ describe("selectScanPerformanceSummary", () => {
     expect(selectScanReliabilityNotice(sparseScan)).toBeNull();
     expect(overview.kpis[0].value).toBe(0);
     expect(alerts.rows).toEqual([]);
-    expect(alerts.emptyState.title).toBe("No alerts");
+    expect(alerts.emptyState.title).toBe("No alerts this run");
     expect(history.summaryCards[0].value).toBe(0);
     expect(dailySummary.headline.qualifiedCount).toBe(0);
     expect(portfolio.positions).toEqual([]);
     expect(portfolio.summaryCards[0].value).toBe(0);
+  });
+
+  it("explains zero alerts when qualified trades exist but none passed alert filters", () => {
+    const scanResult = buildScanResult();
+
+    const alerts = selectAlertsModel(scanResult);
+
+    expect(alerts.emptyState.title).toBe("No alerts this run");
+    expect(alerts.emptyState.message).toContain("Qualified trades were found, but none passed the tighter alert filters");
+    expect(alerts.emptyState.message).toContain("Alerts surface only the strongest candidates");
+    expect(alerts.emptyState.message).toContain("Expert mode");
+  });
+
+  it("explains zero alerts when the run has no qualified trades", () => {
+    const scanResult = buildScanResult();
+    scanResult.summary = {
+      qualified_count: 0,
+      near_miss_count: 0,
+      top_overall: null,
+    };
+
+    const alerts = selectAlertsModel(scanResult);
+
+    expect(alerts.emptyState.title).toBe("No alerts this run");
+    expect(alerts.emptyState.message).toContain("No qualified trades or alerts were produced in this run");
+    expect(alerts.emptyState.message).toContain("Review Overview and Daily Summary");
   });
 
   it("falls back to canonical scan sections when daily summary and portfolio sections are sparse", () => {
