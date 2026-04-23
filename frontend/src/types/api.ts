@@ -302,3 +302,67 @@ export type TradeLifecycleUpsertPayload = {
   tags?: string[];
   source_scan_id?: string | null;
 };
+
+export type ExecutionTicketStatus =
+  | "draft"
+  | "ready"
+  | "submitted"
+  | "accepted"
+  | "rejected"
+  | "canceled"
+  | "filled";
+
+export type OrderIntent = "open_credit" | "open_debit" | "other";
+
+export type ExecutionTicket = {
+  ticket_id: string;
+  trade_id: string;
+  source_scan_id: string | null;
+  ticker: string;
+  strategy_key: string;
+  strategy_label: string;
+  directional_bias: string | null;
+  expiration_date: string | null;
+  short_strike: number | null;
+  long_strike: number | null;
+  underlying_price_at_creation: number | null;
+  net_credit_estimate: number | null;
+  max_risk_estimate: number | null;
+  adjusted_score_at_creation: number | null;
+  quantity: number;
+  order_intent: OrderIntent;
+  execution_status: ExecutionTicketStatus;
+  note: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+};
+
+export type ExecutionTicketListResponse = {
+  items: ExecutionTicket[];
+};
+
+export type CreateTicketPayload = {
+  trade_id: string;
+  source_scan_id?: string | null;
+  ticker: string;
+  strategy_key: string;
+  strategy_label: string;
+  directional_bias?: string | null;
+  expiration_date?: string | null;
+  short_strike?: number | null;
+  long_strike?: number | null;
+  underlying_price_at_creation?: number | null;
+  net_credit_estimate?: number | null;
+  max_risk_estimate?: number | null;
+  adjusted_score_at_creation?: number | null;
+  quantity?: number;
+  order_intent?: OrderIntent;
+  note?: string | null;
+};
+
+export type PatchTicketPayload = {
+  quantity?: number | null;
+  note?: string | null;
+  clear_note?: boolean;
+  execution_status?: "draft" | "ready" | null;
+};

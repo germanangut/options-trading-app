@@ -10,6 +10,8 @@ export const QUERY_KEYS = {
   tradeDetail: ["trade-detail"] as const,
   lifecycleList: ["lifecycle-list"] as const,
   tradeLifecycle: ["trade-lifecycle"] as const,
+  ticketList: ["ticket-list"] as const,
+  ticketsByTrade: ["tickets-by-trade"] as const,
 };
 
 export const DEFAULT_SCAN_REQUEST: ScanRequest = {

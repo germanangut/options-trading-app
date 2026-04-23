@@ -4,6 +4,7 @@ import { Link, useParams } from "react-router-dom";
 import { ActionRow } from "../components/ui/ActionRow";
 import { ChartPanel } from "../components/ui/ChartPanel";
 import { EmptyState } from "../components/ui/EmptyState";
+import { ExecutionTicketPanel } from "../components/ui/ExecutionTicketPanel";
 import { LifecycleActions } from "../components/ui/LifecycleActions";
 import { LifecycleBadge } from "../components/ui/LifecycleBadge";
 import { MetricStrip } from "../components/ui/MetricStrip";
@@ -19,6 +20,7 @@ import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
 import { useTradeLifecycle, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
 import { selectTradeDetailExperienceModel } from "../features/scans/selectors/decisionExperienceSelectors";
 import { describeApiError } from "../lib/apiErrors";
+import type { CreateTicketPayload } from "../types/api";
 
 export function QualifiedTradeDetailPage() {
   const { scanId, tradeId } = useParams();
@@ -64,6 +66,21 @@ export function QualifiedTradeDetailPage() {
 
   const model = selectTradeDetailExperienceModel(scanQuery.data, detailQuery.data);
   const lifecycleState = lifecycleQuery.data?.lifecycle_state ?? "new";
+  const tradeSnapshot: CreateTicketPayload = {
+    trade_id: tradeId,
+    source_scan_id: scanId ?? null,
+    ticker: detailQuery.data.trade.ticker,
+    strategy_key: detailQuery.data.trade.strategy_type,
+    strategy_label: detailQuery.data.trade.strategy_label ?? detailQuery.data.trade.strategy_type,
+    directional_bias: detailQuery.data.trade.directional_bias ?? null,
+    expiration_date: detailQuery.data.trade.expiration_date ?? null,
+    short_strike: detailQuery.data.trade.short_strike ?? null,
+    long_strike: detailQuery.data.trade.long_strike ?? null,
+    underlying_price_at_creation: detailQuery.data.trade.underlying_price ?? null,
+    net_credit_estimate: detailQuery.data.trade.net_credit ?? null,
+    max_risk_estimate: detailQuery.data.trade.max_risk ?? null,
+    adjusted_score_at_creation: detailQuery.data.trade.adjusted_score ?? null,
+  };
   const supportNotes = model.whyThisTrade.slice(0, 4);
   const contextNotes = [...model.stability.notes, ...model.historyStory, ...model.portfolioImpact.notes.slice(1)].slice(0, 4);
 
@@ -258,6 +275,19 @@ export function QualifiedTradeDetailPage() {
             )}
           </div>
         </div>
+      </SectionFrame>
+
+      <SectionFrame
+        eyebrow="Execution ticket"
+        title="Execution preparation"
+        subtitle="Prepare a structured, auditable execution ticket before any broker submission flow is enabled."
+      >
+        <ExecutionTicketPanel
+          tradeId={tradeId}
+          scanId={scanId}
+          tradeSnapshot={tradeSnapshot}
+          lifecycleState={lifecycleState}
+        />
       </SectionFrame>
 
       <section className="grid gap-3 lg:grid-cols-[minmax(0,1.08fr)_minmax(0,0.92fr)]">

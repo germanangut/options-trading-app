@@ -13,6 +13,7 @@ from backend.api.routes.auth import router as auth_router
 from backend.api.routes.lifecycle import router as lifecycle_router
 from backend.api.routes.ops import router as ops_router
 from backend.api.routes.scans import router as scans_router
+from backend.api.routes.tickets import router as tickets_router
 from backend.observability.context import bind_context, clear_context
 from backend.observability.error_tracking import initialize_error_tracking
 from backend.observability.logging import configure_logging, get_logger, log_event
@@ -86,7 +87,7 @@ app.add_middleware(
     allow_origins=allowed_cors_origins(),
     allow_origin_regex=allowed_cors_origin_regex(),
     allow_credentials=False,
-    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
     allow_headers=["*"],
 )
 
@@ -96,6 +97,7 @@ app.include_router(scans_router)
 app.include_router(auth_router)
 app.include_router(lifecycle_router)
 app.include_router(ops_router)
+app.include_router(tickets_router)
 
 log_event(logger, "app_configured", **get_safe_settings_summary())
 

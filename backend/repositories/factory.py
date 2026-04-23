@@ -5,6 +5,7 @@ from pathlib import Path
 from backend.repositories.sqlite_auth_repository import SQLiteAuthRepository
 from backend.repositories.sqlite_lifecycle_repository import SQLiteLifecycleRepository
 from backend.repositories.sqlite_scan_repository import SQLiteScanRepository
+from backend.repositories.sqlite_ticket_repository import SQLiteTicketRepository
 from settings import get_settings
 
 
@@ -28,3 +29,7 @@ def get_auth_repository() -> SQLiteAuthRepository:
 
 def get_lifecycle_repository() -> SQLiteLifecycleRepository:
     return SQLiteLifecycleRepository(_default_scan_database_path())
+
+
+def get_ticket_repository() -> SQLiteTicketRepository:
+    return SQLiteTicketRepository(_default_scan_database_path())

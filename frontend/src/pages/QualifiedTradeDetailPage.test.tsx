@@ -18,6 +18,10 @@ vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
   useUpsertTradeLifecycle: vi.fn(),
 }));
 
+vi.mock("../components/ui/ExecutionTicketPanel", () => ({
+  ExecutionTicketPanel: () => <div data-testid="execution-ticket-panel">Execution Ticket Panel</div>,
+}));
+
 const { useScanById } = await import("../features/scans/hooks/useScanById");
 
 afterEach(() => {
@@ -194,6 +198,8 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("Strike ladder")).toBeInTheDocument();
     expect(screen.getByText("What to confirm next")).toBeInTheDocument();
     expect(screen.getByText("Portfolio context")).toBeInTheDocument();
+    expect(screen.getByText("Execution preparation")).toBeInTheDocument();
+    expect(screen.getByTestId("execution-ticket-panel")).toBeInTheDocument();
     // Lifecycle badge renders state label
     expect(screen.getByText("Saved")).toBeInTheDocument();
     // Action buttons present
