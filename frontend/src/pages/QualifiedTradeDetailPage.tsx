@@ -9,6 +9,7 @@ import { LifecycleActions } from "../components/ui/LifecycleActions";
 import { LifecycleBadge } from "../components/ui/LifecycleBadge";
 import { MetricStrip } from "../components/ui/MetricStrip";
 import { MiniPayoffCue } from "../components/ui/MiniPayoffCue";
+import { PayoffCurve } from "../components/ui/PayoffCurve";
 import { PageShell } from "../components/ui/PageShell";
 import { PortfolioImpactBand } from "../components/ui/PortfolioImpactBand";
 import { ScoreRibbon } from "../components/ui/ScoreRibbon";
@@ -17,15 +18,18 @@ import { Chip } from "../components/ui/Chip";
 import { WarningBand } from "../components/ui/WarningBand";
 import { useScanById } from "../features/scans/hooks/useScanById";
 import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
+import { useTradePayoff } from "../features/scans/hooks/useTradePayoff";
 import { useTradeLifecycle, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
 import { selectTradeDetailExperienceModel } from "../features/scans/selectors/decisionExperienceSelectors";
 import { describeApiError } from "../lib/apiErrors";
+import { formatCurrency } from "../lib/formatters";
 import type { CreateTicketPayload } from "../types/api";
 
 export function QualifiedTradeDetailPage() {
   const { scanId, tradeId } = useParams();
   const scanQuery = useScanById(scanId);
   const detailQuery = useTradeDetail(scanId, tradeId);
+  const payoffQuery = useTradePayoff(scanId, tradeId);
   const lifecycleQuery = useTradeLifecycle(tradeId);
   const upsertLifecycle = useUpsertTradeLifecycle();
   const savedNote = lifecycleQuery.data?.note ?? null;
@@ -83,6 +87,31 @@ export function QualifiedTradeDetailPage() {
   };
   const supportNotes = model.whyThisTrade.slice(0, 4);
   const contextNotes = [...model.stability.notes, ...model.historyStory, ...model.portfolioImpact.notes.slice(1)].slice(0, 4);
+  const payoff = payoffQuery.data?.payoff ?? null;
+  const payoffSummaryItems = payoff
+    ? [
+      {
+        label: "Max Profit",
+        value: formatCurrency(payoff.max_profit),
+        tone: "success" as const,
+      },
+      {
+        label: "Max Loss",
+        value: formatCurrency(payoff.max_loss),
+        tone: "danger" as const,
+      },
+      {
+        label: "Breakeven",
+        value:
+          payoff.breakeven_low !== null
+            ? `$${payoff.breakeven_low.toFixed(2)}`
+            : payoff.breakeven_high !== null
+              ? `$${payoff.breakeven_high.toFixed(2)}`
+              : "-",
+        tone: "accent" as const,
+      },
+    ]
+    : [];
 
   const lifecycleErrorMessage = upsertLifecycle.isError
     ? (upsertLifecycle.error?.message ?? "Lifecycle update failed. Try again.")
@@ -165,6 +194,29 @@ export function QualifiedTradeDetailPage() {
                 riskLabel="Max risk"
                 subtitle="Use the credit against the defined downside to decide whether the structure still earns deeper review."
               />
+            </ChartPanel>
+            <ChartPanel title="Expiration payoff" subtitle="Model-only view of payoff at expiration based on strategy structure and current ticket assumptions.">
+              {payoffQuery.isLoading ? (
+                <p className="text-xs text-ink-4">Loading payoff model...</p>
+              ) : payoff ? (
+                <div className="space-y-4">
+                  <MetricStrip items={payoffSummaryItems} columns={3} />
+                  <PayoffCurve points={payoff.payoff_points} />
+                  <p className="text-xs leading-5 text-ink-4">{payoff.expiration_summary}</p>
+                  <div className="grid gap-2 text-xs text-ink-4 sm:grid-cols-2">
+                    <div className="rounded-card border border-white/8 bg-surface-2/60 px-3 py-2">
+                      <p className="eyebrow-label">Profit zone</p>
+                      <p className="mt-1 text-ink-2">{payoff.profit_zone}</p>
+                    </div>
+                    <div className="rounded-card border border-white/8 bg-surface-2/60 px-3 py-2">
+                      <p className="eyebrow-label">Loss zone</p>
+                      <p className="mt-1 text-ink-2">{payoff.loss_zone}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-ink-4">Payoff model is unavailable for this trade.</p>
+              )}
             </ChartPanel>
           </div>
 

@@ -1,2 +1,10 @@
 .cache/
 frontend/test-results/
+__pycache__/
+**/__pycache__/
+*.pyc
+tmp_test_*/
+tmp_cache/
+tmp_history/
+frontend/node_modules/.vite/
+frontend/tsconfig.app.tsbuildinfo

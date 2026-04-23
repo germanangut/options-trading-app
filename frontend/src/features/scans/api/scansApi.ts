@@ -4,6 +4,7 @@ import type {
   ExecutionTicket,
   ExecutionTicketListResponse,
   PaperDashboardResponse,
+  PayoffEnvelope,
   PatchTicketPayload,
   ScanRequest,
   ScanResult,
@@ -30,6 +31,12 @@ export function getScanById(scanId: string): Promise<ScanResult> {
 export function getTradeDetail(scanId: string, tradeId: string): Promise<TradeDetailResponse> {
   return apiClient.get<TradeDetailResponse>(
     `/api/v1/scans/${encodeURIComponent(scanId)}/trades/${encodeURIComponent(tradeId)}`,
+  );
+}
+
+export function getTradePayoff(scanId: string, tradeId: string): Promise<PayoffEnvelope> {
+  return apiClient.get<PayoffEnvelope>(
+    `/api/v1/payoff/scans/${encodeURIComponent(scanId)}/trades/${encodeURIComponent(tradeId)}`,
   );
 }
 

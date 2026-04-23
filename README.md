@@ -346,6 +346,41 @@ Current limitations deferred beyond PU-15A.5:
 - robust position-to-ticket attribution across every broker symbol edge case
 - advanced execution analytics and full performance attribution
 
+### Payoff engine (PU-15B.1)
+
+PU-15B.1 adds an analytical payoff engine for trade-detail decision support. This layer is intentionally independent from broker submission and does not alter scan ranking, lifecycle state semantics, or ticket execution flows.
+
+Supported strategy shapes in this phase:
+
+- `bull_put_spread`
+- `bear_call_spread`
+
+Payoff endpoints:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/payoff/scans/{scan_id}/trades/{trade_id}` | Compute expiration payoff model for a qualified trade from a scan |
+| `GET` | `/api/v1/payoff/tickets/{ticket_id}` | Compute expiration payoff model from stored execution ticket snapshot |
+
+Response includes:
+
+- deterministic underlying-price grid (`price_grid`)
+- expiration payoff points (`payoff_points`)
+- summary metrics (`max_profit`, `max_loss`, `breakeven_low`/`breakeven_high`)
+- textual zones (`profit_zone`, `loss_zone`) and strategy explanation
+
+Frontend integration in this phase:
+
+- Qualified Trade Detail now includes an Expiration Payoff panel
+- panel shows max profit/loss/breakeven strip plus a zero-anchored payoff curve
+- curve is model-only and sourced from the new payoff API endpoint
+
+Current limitations deferred beyond PU-15B.1:
+
+- no time-step path simulation or probability-weighted outcome surfaces
+- no volatility or Greeks sensitivity overlays
+- no what-if leg editing workspace (simulation lab)
+
 ### Scope boundaries in this phase
 
 - No broker order placement

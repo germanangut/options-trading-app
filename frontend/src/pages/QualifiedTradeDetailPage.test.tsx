@@ -13,6 +13,10 @@ vi.mock("../features/scans/hooks/useTradeDetail", () => ({
   useTradeDetail: vi.fn(),
 }));
 
+vi.mock("../features/scans/hooks/useTradePayoff", () => ({
+  useTradePayoff: vi.fn(),
+}));
+
 vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
   useTradeLifecycle: vi.fn(),
   useUpsertTradeLifecycle: vi.fn(),
@@ -30,6 +34,7 @@ afterEach(() => {
 });
 
 const { useTradeDetail } = await import("../features/scans/hooks/useTradeDetail");
+const { useTradePayoff } = await import("../features/scans/hooks/useTradePayoff");
 const { useTradeLifecycle, useUpsertTradeLifecycle } = await import("../features/scans/hooks/useTradeLifecycle");
 
 function buildScan(): ScanResult {
@@ -165,6 +170,39 @@ describe("QualifiedTradeDetailPage", () => {
       isError: false,
       data: buildDetail(),
     } as ReturnType<typeof useTradeDetail>);
+    vi.mocked(useTradePayoff).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        source_type: "qualified_trade",
+        source_id: "trade_1",
+        payoff: {
+          strategy_key: "bull_put_spread",
+          ticker: "AAPL",
+          quantity: 1,
+          underlying_price_reference: 191.2,
+          short_strike: 180,
+          long_strike: 175,
+          net_credit: 1.45,
+          spread_width: 5,
+          max_profit: 145,
+          max_loss: 355,
+          breakeven_low: 178.55,
+          breakeven_high: null,
+          profit_zone: "Underlying >= 180.00",
+          loss_zone: "Underlying <= 175.00",
+          expiration_summary: "Bull put spread keeps full credit above the short strike.",
+          price_grid: [160, 170, 180, 190, 200],
+          payoff_points: [
+            { underlying_price: 160, expiration_payoff: -355 },
+            { underlying_price: 170, expiration_payoff: -355 },
+            { underlying_price: 180, expiration_payoff: 145 },
+            { underlying_price: 190, expiration_payoff: 145 },
+            { underlying_price: 200, expiration_payoff: 145 },
+          ],
+        },
+      },
+    } as unknown as ReturnType<typeof useTradePayoff>);
     vi.mocked(useTradeLifecycle).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -195,6 +233,13 @@ describe("QualifiedTradeDetailPage", () => {
 
     expect(screen.getByText("Why this trade surfaced")).toBeInTheDocument();
     expect(screen.getAllByText("Payoff cue").length).toBeGreaterThan(0);
+    expect(screen.getByText("Expiration payoff")).toBeInTheDocument();
+    expect(screen.getByText("Max Profit")).toBeInTheDocument();
+    expect(screen.getByText("$145.00")).toBeInTheDocument();
+    expect(screen.getAllByText("$355.00").length).toBeGreaterThan(0);
+    expect(screen.getByText("$178.55")).toBeInTheDocument();
+    expect(screen.getByText("Profit zone")).toBeInTheDocument();
+    expect(screen.getByText("Underlying >= 180.00")).toBeInTheDocument();
     expect(screen.getByText("Strike ladder")).toBeInTheDocument();
     expect(screen.getByText("What to confirm next")).toBeInTheDocument();
     expect(screen.getByText("Portfolio context")).toBeInTheDocument();
@@ -223,6 +268,11 @@ describe("QualifiedTradeDetailPage", () => {
     vi.mocked(useTradeDetail).mockReturnValue({
       isLoading: false, isError: false, data: buildDetail(),
     } as ReturnType<typeof useTradeDetail>);
+    vi.mocked(useTradePayoff).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: null,
+    } as unknown as ReturnType<typeof useTradePayoff>);
     vi.mocked(useTradeLifecycle).mockReturnValue({
       isLoading: false, isError: false,
       data: {
@@ -244,6 +294,7 @@ describe("QualifiedTradeDetailPage", () => {
       </MemoryRouter>,
     );
 
+    expect(screen.getByText("Payoff model is unavailable for this trade.")).toBeInTheDocument();
     expect(screen.getByText("Add a note about this trade…")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });

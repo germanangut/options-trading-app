@@ -270,6 +270,37 @@ export type TradeDetailResponse = {
   };
 };
 
+export type PayoffPoint = {
+  underlying_price: number;
+  expiration_payoff: number;
+};
+
+export type PayoffAnalysis = {
+  strategy_key: string;
+  ticker: string | null;
+  quantity: number;
+  underlying_price_reference: number;
+  short_strike: number;
+  long_strike: number;
+  net_credit: number;
+  spread_width: number;
+  max_profit: number;
+  max_loss: number;
+  breakeven_low: number | null;
+  breakeven_high: number | null;
+  profit_zone: string;
+  loss_zone: string;
+  expiration_summary: string;
+  price_grid: number[];
+  payoff_points: PayoffPoint[];
+};
+
+export type PayoffEnvelope = {
+  source_type: string;
+  source_id: string;
+  payoff: PayoffAnalysis;
+};
+
 export type TradeLifecycleState =
   | "new"
   | "saved"
