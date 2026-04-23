@@ -381,6 +381,55 @@ Current limitations deferred beyond PU-15B.1:
 - no volatility or Greeks sensitivity overlays
 - no what-if leg editing workspace (simulation lab)
 
+### Strategy variants (PU-15B.2)
+
+PU-15B.2 adds an analytical variant-comparison layer on top of the selected baseline trade. This phase does not change scan selection, ranking, alerting behavior, lifecycle semantics, ticket workflow, or Alpaca paper integration.
+
+Variant meanings in this phase:
+
+- Baseline: Current scanned setup
+- Conservative: Lower credit, more room for the trade to work
+- Max Credit: Higher premium, tighter room for error
+
+Important scope notes:
+
+- Delta-neutral is intentionally out of scope for PU-15B.2
+- Variants are analytical only and are not auto-promoted to execution-ready
+- If clean variant construction is not possible, fewer variants are returned
+
+Supported strategy families in PU-15B.2:
+
+- `bull_put_spread`
+- `bear_call_spread`
+
+Variant endpoint:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/variants/scans/{scan_id}/trades/{trade_id}` | Return baseline + eligible conservative/max-credit analytical variants for the selected qualified trade |
+
+Variant response includes:
+
+- `variant_type` (`baseline`, `conservative`, `max_credit`)
+- spread shape (`short_strike`, `long_strike`, `expiration_date`, `spread_width`)
+- economics (`net_credit`, `max_profit`, `max_loss`, `breakeven`)
+- user-facing explanation (`label`, `rationale`)
+- payoff summary (`payoff` with max profit/loss, breakeven and payoff points)
+
+Current data limitations in this phase:
+
+- baseline credit is from the scanned trade snapshot
+- conservative/max-credit credits are deterministic analytical estimates when full chain pricing is not present in the trade payload
+- no fabricated contracts, strikes, or premiums are returned
+
+Deferred beyond PU-15B.2:
+
+- delta-neutral variants
+- strategy workbench/lab with sliders and what-if controls
+- multi-strategy compare grids
+- portfolio-level scenario simulation
+- volatility/time-decay scenario simulation
+
 ### Scope boundaries in this phase
 
 - No broker order placement

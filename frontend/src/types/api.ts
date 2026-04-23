@@ -301,6 +301,33 @@ export type PayoffEnvelope = {
   payoff: PayoffAnalysis;
 };
 
+export type StrategyVariant = {
+  variant_type: "baseline" | "conservative" | "max_credit";
+  strategy_key: string;
+  reference_trade_id: string | null;
+  short_strike: number;
+  long_strike: number;
+  expiration_date: string | null;
+  net_credit: number;
+  spread_width: number;
+  max_profit: number;
+  max_loss: number;
+  breakeven: number;
+  label: string;
+  rationale: string;
+  is_credit_estimated: boolean;
+  payoff: PayoffAnalysis | null;
+};
+
+export type VariantSet = {
+  scan_id: string;
+  trade_id: string;
+  strategy_key: string;
+  underlying_price_reference: number;
+  ticker: string | null;
+  variants: StrategyVariant[];
+};
+
 export type TradeLifecycleState =
   | "new"
   | "saved"

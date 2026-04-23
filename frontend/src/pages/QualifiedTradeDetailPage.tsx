@@ -19,11 +19,13 @@ import { WarningBand } from "../components/ui/WarningBand";
 import { useScanById } from "../features/scans/hooks/useScanById";
 import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
 import { useTradePayoff } from "../features/scans/hooks/useTradePayoff";
+import { useTradeVariants } from "../features/scans/hooks/useTradeVariants";
 import { useTradeLifecycle, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
 import { selectTradeDetailExperienceModel } from "../features/scans/selectors/decisionExperienceSelectors";
 import { describeApiError } from "../lib/apiErrors";
 import { formatCurrency } from "../lib/formatters";
 import type { CreateTicketPayload } from "../types/api";
+import { VariantComparisonPanel } from "../components/ui/VariantComparisonPanel";
 
 export function QualifiedTradeDetailPage() {
   const { scanId, tradeId } = useParams();
@@ -31,6 +33,7 @@ export function QualifiedTradeDetailPage() {
   const detailQuery = useTradeDetail(scanId, tradeId);
   const payoffQuery = useTradePayoff(scanId, tradeId);
   const lifecycleQuery = useTradeLifecycle(tradeId);
+  const variantsQuery = useTradeVariants(scanId, tradeId);
   const upsertLifecycle = useUpsertTradeLifecycle();
   const savedNote = lifecycleQuery.data?.note ?? null;
   const [noteEditing, setNoteEditing] = useState(false);
@@ -242,6 +245,17 @@ export function QualifiedTradeDetailPage() {
             </WarningBand>
           </div>
         </div>
+      </SectionFrame>
+
+      <SectionFrame
+        eyebrow="Strategy variants"
+        title="Variant comparison"
+        subtitle="Compare this scanned setup against conservative and max-credit alternatives. Analytical only — not execution-ready."
+      >
+        <VariantComparisonPanel
+          variantSet={variantsQuery.data}
+          isLoading={variantsQuery.isLoading}
+        />
       </SectionFrame>
 
       <SectionFrame eyebrow="Lifecycle" title="Trade workflow state" subtitle="User-managed state is persistent and separate from scan qualification and ranking.">

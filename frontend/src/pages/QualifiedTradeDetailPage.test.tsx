@@ -17,6 +17,10 @@ vi.mock("../features/scans/hooks/useTradePayoff", () => ({
   useTradePayoff: vi.fn(),
 }));
 
+vi.mock("../features/scans/hooks/useTradeVariants", () => ({
+  useTradeVariants: vi.fn(),
+}));
+
 vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
   useTradeLifecycle: vi.fn(),
   useUpsertTradeLifecycle: vi.fn(),
@@ -36,6 +40,7 @@ afterEach(() => {
 const { useTradeDetail } = await import("../features/scans/hooks/useTradeDetail");
 const { useTradePayoff } = await import("../features/scans/hooks/useTradePayoff");
 const { useTradeLifecycle, useUpsertTradeLifecycle } = await import("../features/scans/hooks/useTradeLifecycle");
+const { useTradeVariants } = await import("../features/scans/hooks/useTradeVariants");
 
 function buildScan(): ScanResult {
   return {
@@ -203,6 +208,70 @@ describe("QualifiedTradeDetailPage", () => {
         },
       },
     } as unknown as ReturnType<typeof useTradePayoff>);
+    vi.mocked(useTradeVariants).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: {
+        scan_id: "scan_trade",
+        trade_id: "trade_1",
+        strategy_key: "bull_put_spread",
+        underlying_price_reference: 191.2,
+        ticker: "AAPL",
+        variants: [
+          {
+            variant_type: "baseline",
+            strategy_key: "bull_put_spread",
+            reference_trade_id: "trade_1",
+            short_strike: 180,
+            long_strike: 175,
+            expiration_date: "2026-05-15",
+            net_credit: 1.45,
+            spread_width: 5,
+            max_profit: 145,
+            max_loss: 355,
+            breakeven: 178.55,
+            label: "Current scanned setup",
+            rationale: "The original scanned candidate as selected by the engine.",
+            is_credit_estimated: false,
+            payoff: null,
+          },
+          {
+            variant_type: "conservative",
+            strategy_key: "bull_put_spread",
+            reference_trade_id: "trade_1",
+            short_strike: 179,
+            long_strike: 174,
+            expiration_date: "2026-05-15",
+            net_credit: 1.3,
+            spread_width: 5,
+            max_profit: 130,
+            max_loss: 370,
+            breakeven: 177.7,
+            label: "Lower credit, more room for the trade to work",
+            rationale: "Short strike shifted down.",
+            is_credit_estimated: true,
+            payoff: null,
+          },
+          {
+            variant_type: "max_credit",
+            strategy_key: "bull_put_spread",
+            reference_trade_id: "trade_1",
+            short_strike: 181,
+            long_strike: 176,
+            expiration_date: "2026-05-15",
+            net_credit: 1.62,
+            spread_width: 5,
+            max_profit: 162,
+            max_loss: 338,
+            breakeven: 179.38,
+            label: "Higher premium, tighter room for error",
+            rationale: "Short strike shifted up.",
+            is_credit_estimated: true,
+            payoff: null,
+          },
+        ],
+      },
+    } as unknown as ReturnType<typeof useTradeVariants>);
     vi.mocked(useTradeLifecycle).mockReturnValue({
       isLoading: false,
       isError: false,
@@ -234,16 +303,20 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("Why this trade surfaced")).toBeInTheDocument();
     expect(screen.getAllByText("Payoff cue").length).toBeGreaterThan(0);
     expect(screen.getByText("Expiration payoff")).toBeInTheDocument();
-    expect(screen.getByText("Max Profit")).toBeInTheDocument();
-    expect(screen.getByText("$145.00")).toBeInTheDocument();
+    expect(screen.getAllByText("Max Profit").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("$145.00").length).toBeGreaterThan(0);
     expect(screen.getAllByText("$355.00").length).toBeGreaterThan(0);
-    expect(screen.getByText("$178.55")).toBeInTheDocument();
+    expect(screen.getAllByText("$178.55").length).toBeGreaterThan(0);
     expect(screen.getByText("Profit zone")).toBeInTheDocument();
     expect(screen.getByText("Underlying >= 180.00")).toBeInTheDocument();
     expect(screen.getByText("Strike ladder")).toBeInTheDocument();
     expect(screen.getByText("What to confirm next")).toBeInTheDocument();
     expect(screen.getByText("Portfolio context")).toBeInTheDocument();
     expect(screen.getByText("Execution preparation")).toBeInTheDocument();
+    expect(screen.getByText("Variant comparison")).toBeInTheDocument();
+    expect(screen.getByText("Current scanned setup")).toBeInTheDocument();
+    expect(screen.getByText("Lower credit, more room for the trade to work")).toBeInTheDocument();
+    expect(screen.getByText("Higher premium, tighter room for error")).toBeInTheDocument();
     expect(screen.getByTestId("execution-ticket-panel")).toBeInTheDocument();
     // Lifecycle badge renders state label
     expect(screen.getByText("Saved")).toBeInTheDocument();
@@ -273,6 +346,11 @@ describe("QualifiedTradeDetailPage", () => {
       isError: false,
       data: null,
     } as unknown as ReturnType<typeof useTradePayoff>);
+    vi.mocked(useTradeVariants).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: null,
+    } as unknown as ReturnType<typeof useTradeVariants>);
     vi.mocked(useTradeLifecycle).mockReturnValue({
       isLoading: false, isError: false,
       data: {

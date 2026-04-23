@@ -13,6 +13,7 @@ import type {
   TradeLifecycleRecord,
   TradeLifecycleUpsertPayload,
 } from "../../../types/api";
+import type { VariantSet } from "../../../types/api";
 
 export function runScan(payload: ScanRequest): Promise<ScanResult> {
   return apiClient.post<ScanResult>("/scans", payload);
@@ -37,6 +38,12 @@ export function getTradeDetail(scanId: string, tradeId: string): Promise<TradeDe
 export function getTradePayoff(scanId: string, tradeId: string): Promise<PayoffEnvelope> {
   return apiClient.get<PayoffEnvelope>(
     `/api/v1/payoff/scans/${encodeURIComponent(scanId)}/trades/${encodeURIComponent(tradeId)}`,
+  );
+}
+
+export function getTradeVariants(scanId: string, tradeId: string): Promise<VariantSet> {
+  return apiClient.get<VariantSet>(
+    `/api/v1/variants/scans/${encodeURIComponent(scanId)}/trades/${encodeURIComponent(tradeId)}`,
   );
 }
 
