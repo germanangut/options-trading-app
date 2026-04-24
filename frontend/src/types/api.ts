@@ -553,3 +553,51 @@ export type WorkbenchResult = {
   width_options: WorkbenchControlOption[];
 };
 
+// ---------------------------------------------------------------------------
+// Delta-Neutral Exploration (PU-15B.5)
+// ---------------------------------------------------------------------------
+
+export type DeltaNeutralScenario = {
+  strategy_key: string;
+  ticker: string | null;
+  short_strike: number;
+  long_strike: number;
+  expiration_date: string | null;
+  net_credit: number;
+  spread_width: number;
+  max_profit: number;
+  max_loss: number;
+  breakeven: number;
+  label: string;
+  is_credit_estimated: boolean;
+  net_delta: number;
+  payoff: PayoffAnalysis | null;
+};
+
+export type DeltaNeutralComparison = {
+  baseline_net_delta: number;
+  candidate_net_delta: number;
+  delta_reduction: number;
+  delta_reduction_pct: number;
+  delta_max_profit: number;
+  delta_max_loss: number;
+  delta_breakeven: number;
+  summary: string;
+};
+
+export type DeltaNeutralExploration = {
+  scan_id: string;
+  trade_id: string;
+  baseline_trade_id: string | null;
+  strategy_key: string;
+  ticker: string | null;
+  underlying_price_reference: number;
+  baseline: DeltaNeutralScenario;
+  neutral_candidate_available: boolean;
+  neutral_candidate: DeltaNeutralScenario | null;
+  comparison: DeltaNeutralComparison | null;
+  rationale: string;
+  limitation_note: string | null;
+  unavailable_reason: string | null;
+};
+

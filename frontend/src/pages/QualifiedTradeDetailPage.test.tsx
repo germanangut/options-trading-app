@@ -25,6 +25,10 @@ vi.mock("../features/scans/hooks/useWorkbenchScenario", () => ({
   useWorkbenchScenario: vi.fn(),
 }));
 
+vi.mock("../features/scans/hooks/useDeltaNeutralExploration", () => ({
+  useDeltaNeutralExploration: vi.fn(),
+}));
+
 vi.mock("../features/scans/hooks/useTradeLifecycle", () => ({
   useTradeLifecycle: vi.fn(),
   useUpsertTradeLifecycle: vi.fn(),
@@ -46,6 +50,7 @@ const { useTradePayoff } = await import("../features/scans/hooks/useTradePayoff"
 const { useTradeLifecycle, useUpsertTradeLifecycle } = await import("../features/scans/hooks/useTradeLifecycle");
 const { useTradeVariants } = await import("../features/scans/hooks/useTradeVariants");
 const { useWorkbenchScenario } = await import("../features/scans/hooks/useWorkbenchScenario");
+const { useDeltaNeutralExploration } = await import("../features/scans/hooks/useDeltaNeutralExploration");
 
 function buildScan(): ScanResult {
   return {
@@ -291,6 +296,74 @@ function buildWorkbenchUnavailableResult() {
   };
 }
 
+function buildDeltaNeutralAvailableResult() {
+  return {
+    scan_id: "scan_trade",
+    trade_id: "trade_1",
+    baseline_trade_id: "trade_1",
+    strategy_key: "bull_put_spread",
+    ticker: "AAPL",
+    underlying_price_reference: 191.2,
+    baseline: {
+      strategy_key: "bull_put_spread",
+      ticker: "AAPL",
+      short_strike: 180,
+      long_strike: 175,
+      expiration_date: "2026-05-15",
+      net_credit: 1.45,
+      spread_width: 5,
+      max_profit: 145,
+      max_loss: 355,
+      breakeven: 178.55,
+      label: "Current scanned setup",
+      is_credit_estimated: false,
+      net_delta: 0.15,
+      payoff: null,
+    },
+    neutral_candidate_available: true,
+    neutral_candidate: {
+      strategy_key: "bull_put_spread",
+      ticker: "AAPL",
+      short_strike: 179,
+      long_strike: 175,
+      expiration_date: "2026-05-15",
+      net_credit: 1.31,
+      spread_width: 4,
+      max_profit: 131,
+      max_loss: 269,
+      breakeven: 177.69,
+      label: "Reduced directional bias candidate",
+      is_credit_estimated: true,
+      net_delta: 0.11,
+      payoff: null,
+    },
+    comparison: {
+      baseline_net_delta: 0.15,
+      candidate_net_delta: 0.11,
+      delta_reduction: 0.04,
+      delta_reduction_pct: 26.67,
+      delta_max_profit: -14,
+      delta_max_loss: -86,
+      delta_breakeven: -0.86,
+      summary: "Reduced directional bias (26.7%): closer to neutral. Lower directional conviction, different payoff tradeoff.",
+    },
+    rationale: "Reduced directional bias candidate built from nearby valid spread context.",
+    limitation_note: "Candidate net delta is an approximation from baseline leg deltas and nearby structural shifts.",
+    unavailable_reason: null,
+  };
+}
+
+function buildDeltaNeutralUnavailableResult() {
+  const base = buildDeltaNeutralAvailableResult();
+  return {
+    ...base,
+    neutral_candidate_available: false,
+    neutral_candidate: null,
+    comparison: null,
+    unavailable_reason: "No clean delta-neutral alternative found because leg deltas are missing.",
+  };
+}
+
 describe("QualifiedTradeDetailPage", () => {
   it("renders the execution briefing composition with strike ladder and checklist", () => {
     vi.mocked(useScanById).mockReturnValue({
@@ -532,6 +605,11 @@ describe("QualifiedTradeDetailPage", () => {
       isError: false,
       data: buildWorkbenchScenarioResult(),
     } as unknown as ReturnType<typeof useWorkbenchScenario>);
+    vi.mocked(useDeltaNeutralExploration).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildDeltaNeutralAvailableResult(),
+    } as unknown as ReturnType<typeof useDeltaNeutralExploration>);
 
     render(
       <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
@@ -557,6 +635,9 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("Variant comparison")).toBeInTheDocument();
     expect(screen.getByText("Payoff shape and trade-off lab")).toBeInTheDocument();
     expect(screen.getByText("Scenario explorer")).toBeInTheDocument();
+    expect(screen.getByText("Directional exposure comparison")).toBeInTheDocument();
+    expect(screen.getByText("Reduced directional bias candidate")).toBeInTheDocument();
+    expect(screen.getByText("Trade-off summary")).toBeInTheDocument();
     expect(screen.getByText("Short strike")).toBeInTheDocument();
     expect(screen.getByText("Spread width")).toBeInTheDocument();
     expect(screen.getAllByText("Current scanned setup").length).toBeGreaterThan(0);
@@ -624,6 +705,11 @@ describe("QualifiedTradeDetailPage", () => {
       isError: false,
       data: null,
     } as unknown as ReturnType<typeof useWorkbenchScenario>);
+    vi.mocked(useDeltaNeutralExploration).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildDeltaNeutralUnavailableResult(),
+    } as unknown as ReturnType<typeof useDeltaNeutralExploration>);
 
     render(
       <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
@@ -636,6 +722,7 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("Payoff model is unavailable for this trade.")).toBeInTheDocument();
     expect(screen.getByText("Add a note about this trade…")).toBeInTheDocument();
     expect(screen.getByText("Visual strategy lab is unavailable because a baseline payoff structure could not be loaded for this trade.")).toBeInTheDocument();
+    expect(screen.getByText("No clean delta-neutral alternative found.")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit" })).toBeNull();
   });
 
@@ -734,6 +821,11 @@ describe("QualifiedTradeDetailPage", () => {
       isError: false,
       data: buildWorkbenchUnavailableResult(),
     } as unknown as ReturnType<typeof useWorkbenchScenario>);
+    vi.mocked(useDeltaNeutralExploration).mockReturnValue({
+      isLoading: false,
+      isError: false,
+      data: buildDeltaNeutralUnavailableResult(),
+    } as unknown as ReturnType<typeof useDeltaNeutralExploration>);
 
     render(
       <MemoryRouter initialEntries={["/scans/scan_trade/trades/trade_1"]}>
@@ -746,6 +838,7 @@ describe("QualifiedTradeDetailPage", () => {
     expect(screen.getByText("No clean variant was found for this setup, so only baseline is available for visual analysis.")).toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Conservative" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Max Credit" })).toBeNull();
+    expect(screen.getByText("No clean delta-neutral alternative found.")).toBeInTheDocument();
 
     // Trigger non-baseline workbench view to validate unavailable-state messaging.
     fireEvent.click(screen.getByRole("button", { name: "Closer for more credit" }));

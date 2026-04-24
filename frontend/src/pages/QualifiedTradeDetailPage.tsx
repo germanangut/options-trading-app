@@ -16,6 +16,7 @@ import { ScoreRibbon } from "../components/ui/ScoreRibbon";
 import { SectionFrame } from "../components/ui/SectionFrame";
 import { Chip } from "../components/ui/Chip";
 import { WarningBand } from "../components/ui/WarningBand";
+import { DeltaNeutralExplorationPanel } from "../components/ui/DeltaNeutralExplorationPanel";
 import { VisualStrategyLab } from "../components/ui/VisualStrategyLab";
 import { WhatIfWorkbench } from "../components/ui/WhatIfWorkbench";
 import { useScanById } from "../features/scans/hooks/useScanById";
@@ -23,6 +24,7 @@ import { useTradeDetail } from "../features/scans/hooks/useTradeDetail";
 import { useTradePayoff } from "../features/scans/hooks/useTradePayoff";
 import { useTradeVariants } from "../features/scans/hooks/useTradeVariants";
 import { useWorkbenchScenario } from "../features/scans/hooks/useWorkbenchScenario";
+import { useDeltaNeutralExploration } from "../features/scans/hooks/useDeltaNeutralExploration";
 import { useTradeLifecycle, useUpsertTradeLifecycle } from "../features/scans/hooks/useTradeLifecycle";
 import { selectTradeDetailExperienceModel } from "../features/scans/selectors/decisionExperienceSelectors";
 import { describeApiError } from "../lib/apiErrors";
@@ -45,6 +47,7 @@ export function QualifiedTradeDetailPage() {
   const [workbenchStrikeShift, setWorkbenchStrikeShift] = useState<WorkbenchStrikeShift>("baseline");
   const [workbenchWidthAdjustment, setWorkbenchWidthAdjustment] = useState<WorkbenchWidthAdjustment>("baseline");
   const workbenchQuery = useWorkbenchScenario(scanId, tradeId, workbenchStrikeShift, workbenchWidthAdjustment);
+  const deltaNeutralQuery = useDeltaNeutralExploration(scanId, tradeId);
 
   useEffect(() => {
     setNoteDraft(savedNote ?? "");
@@ -286,6 +289,17 @@ export function QualifiedTradeDetailPage() {
           widthAdjustment={workbenchWidthAdjustment}
           onStrikeShiftChange={setWorkbenchStrikeShift}
           onWidthAdjustmentChange={setWorkbenchWidthAdjustment}
+        />
+      </SectionFrame>
+
+      <SectionFrame
+        eyebrow="Delta-neutral exploration"
+        title="Directional exposure comparison"
+        subtitle="Compare baseline directional exposure against a closer-to-neutral candidate when a clean structure is available."
+      >
+        <DeltaNeutralExplorationPanel
+          data={deltaNeutralQuery.data}
+          isLoading={deltaNeutralQuery.isLoading}
         />
       </SectionFrame>
 

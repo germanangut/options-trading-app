@@ -11,6 +11,7 @@ export const QUERY_KEYS = {
   tradePayoff: ["trade-payoff"] as const,
   tradeVariants: ["trade-variants"] as const,
   tradeWorkbench: ["trade-workbench"] as const,
+  tradeDeltaNeutral: ["trade-delta-neutral"] as const,
   lifecycleList: ["lifecycle-list"] as const,
   tradeLifecycle: ["trade-lifecycle"] as const,
   ticketList: ["ticket-list"] as const,

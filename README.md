@@ -473,6 +473,50 @@ Deferred beyond PU-15B.3:
 - multi-variant overlay with dense chart controls
 - volatility/time-decay scenario simulation layers
 
+### Delta-neutral exploration (PU-15B.5)
+
+PU-15B.5 adds a separate analytical comparison path for directional exposure. It does not replace the baseline trade and does not change scan logic, ranking, lifecycle behavior, ticket workflows, or broker integration.
+
+What delta-neutral means in this app:
+
+- baseline remains the selected scanned directional spread
+- delta-neutral exploration attempts a closer-to-neutral nearby candidate
+- this phase targets reduced directional bias, not guaranteed perfect zero delta
+
+Supported baseline strategies in PU-15B.5:
+
+- `bull_put_spread`
+- `bear_call_spread`
+
+Delta-neutral endpoint:
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/api/v1/delta-neutral/scans/{scan_id}/trades/{trade_id}` | Return baseline directional summary and a reduced-bias candidate when cleanly available |
+
+Response includes:
+
+- baseline net delta (`baseline.net_delta`)
+- neutral candidate availability flag (`neutral_candidate_available`)
+- neutral candidate net delta (`neutral_candidate.net_delta`) when available
+- delta reduction summary (`comparison.delta_reduction`, `comparison.delta_reduction_pct`)
+- payoff/risk summary and payoff curves for baseline and candidate
+- unavailable reason when no clean candidate can be constructed
+
+Current limitations in this phase:
+
+- candidate net delta is an analytical approximation from baseline leg deltas and nearby structural adjustments
+- no freeform strategy builder or multi-leg editor
+- no portfolio hedging engine
+- no auto-promotion to execution-ready workflows
+
+Deferred beyond PU-15B.5:
+
+- exact-neutral multi-structure search engine
+- iron-condor / multi-leg neutral labs
+- portfolio-level hedge balancing and optimization
+- advanced Greek surface exploration (time/volatility sensitivity)
+
 ### Scope boundaries in this phase
 
 - No broker order placement

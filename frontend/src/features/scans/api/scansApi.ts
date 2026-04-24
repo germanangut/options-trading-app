@@ -15,6 +15,7 @@ import type {
   WorkbenchResult,
   WorkbenchStrikeShift,
   WorkbenchWidthAdjustment,
+  DeltaNeutralExploration,
 } from "../../../types/api";
 import type { VariantSet } from "../../../types/api";
 
@@ -62,6 +63,12 @@ export function getWorkbenchScenario(
   });
   return apiClient.get<WorkbenchResult>(
     `/api/v1/workbench/scans/${encodeURIComponent(scanId)}/trades/${encodeURIComponent(tradeId)}?${params.toString()}`,
+  );
+}
+
+export function getDeltaNeutralExploration(scanId: string, tradeId: string): Promise<DeltaNeutralExploration> {
+  return apiClient.get<DeltaNeutralExploration>(
+    `/api/v1/delta-neutral/scans/${encodeURIComponent(scanId)}/trades/${encodeURIComponent(tradeId)}`,
   );
 }
 
